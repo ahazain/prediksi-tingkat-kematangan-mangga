@@ -1,70 +1,25 @@
 from flask import Flask, request, jsonify
 import os
-from PIL import Image
-import cv2
-import numpy as np
+from ultralytics import YOLO
 
 app = Flask(__name__)
 
-# Coba load YOLOv8 terlebih dahulu, fallback ke YOLOv5 jika gagal
 def load_model():
-    # Prioritas 1: YOLOv8 (lebih stabil)
     try:
-        from ultralytics import YOLO
-        model = YOLO('best.pt')
+        model = YOLO('best2.pt')
         print("YOLOv8 model loaded successfully!")
-        return model, 'yolov8'
+        return model
     except Exception as e:
-        print(f"YOLOv8 failed: {e}")
-        
-        # Prioritas 2: YOLOv5 dengan manual loading
-        try:
-            import torch
-            # Manual clear cache
-            import shutil
-            cache_dir = os.path.expanduser("~/.cache/torch/hub/ultralytics_yolov5_master")
-            if os.path.exists(cache_dir):
-                shutil.rmtree(cache_dir)
-                print("Cleared YOLOv5 cache")
-            
-            model = torch.hub.load('ultralytics/yolov5', 'custom', 
-                                  path='best.pt', 
-                                  force_reload=True,
-                                  trust_repo=True)
-            print("YOLOv5 model loaded successfully!")
-            return model, 'yolov5'
-        except Exception as e2:
-            print(f"YOLOv5 also failed: {e2}")
-            raise e2
+        print(f"Failed to load YOLOv8 model: {e}")
+        raise e
 
 # Load model saat startup
 try:
-    model, model_type = load_model()
-    print(f"Model loaded successfully! Type: {model_type}")
+    model = load_model()
+    print("Model loaded successfully!")
 except Exception as e:
-    print(f"Failed to load any model: {e}")
+    print(f"Failed to load model: {e}")
     model = None
-    model_type = None
-
-def hitung_grade_dan_harga(label, xmin, ymin, xmax, ymax):
-    luas = (xmax - xmin) * (ymax - ymin)
-
-    if label == "not durian":
-        return "X", 0
-    elif label in ["musang king", "black thorn", "monthong", "kanyao"]:
-        if luas > 50000:
-            return "A", 100000
-        elif luas > 30000:
-            return "B", 70000
-        else:
-            return "C", 50000
-    elif label == "bawor":
-        if luas > 50000:
-            return "B", 70000
-        else:
-            return "C", 50000
-    else:
-        return "C", 50000
 
 @app.route('/predict', methods=['POST'])
 def predict():
@@ -83,88 +38,43 @@ def predict():
     image_file.save(image_path)
 
     try:
-        # Inference berdasarkan tipe model
+        # Inference dengan YOLOv8
         results = model(image_path)
         output = []
 
-        if model_type == 'yolov8':
-            # YOLOv8 format
-            for r in results:
-                boxes = r.boxes
-                if boxes is not None:
-                    for box in boxes:
-                        # Get box coordinates
-                        x1, y1, x2, y2 = box.xyxy[0]
-                        xmin, ymin, xmax, ymax = int(x1), int(y1), int(x2), int(y2)
-                        
-                        # Get confidence and class
-                        conf = float(box.conf[0])
-                        cls = int(box.cls[0])
-                        label = model.names[cls]
-                        
-                        grade, harga = hitung_grade_dan_harga(label, xmin, ymin, xmax, ymax)
-                        
-                        output.append({
-                            "label": label,
-                            "confidence": conf,
+        for r in results:
+            boxes = r.boxes
+            if boxes is not None:
+                for box in boxes:
+                    # Get box coordinates
+                    x1, y1, x2, y2 = box.xyxy[0]
+                    xmin, ymin, xmax, ymax = int(x1), int(y1), int(x2), int(y2)
+                    
+                    # Get confidence and class
+                    conf = float(box.conf[0])
+                    cls = int(box.cls[0])
+                    label = model.names[cls]
+                    
+                    output.append({
+                        "ripeness_level": label,
+                        "confidence": conf,
+                        "bounding_box": {
                             "xmin": xmin,
                             "ymin": ymin,
                             "xmax": xmax,
-                            "ymax": ymax,
-                            "grade": grade,
-                            "harga": harga
-                        })
-        
-        elif model_type == 'yolov5':
-            # YOLOv5 format - gunakan pandas
-            if hasattr(results, 'pandas'):
-                df = results.pandas().xyxy[0]
-                for _, row in df.iterrows():
-                    label = row['name']
-                    conf = row['confidence']
-                    xmin, ymin, xmax, ymax = int(row['xmin']), int(row['ymin']), int(row['xmax']), int(row['ymax'])
-                    
-                    grade, harga = hitung_grade_dan_harga(label, xmin, ymin, xmax, ymax)
-                    
-                    output.append({
-                        "label": label,
-                        "confidence": conf,
-                        "xmin": xmin,
-                        "ymin": ymin,
-                        "xmax": xmax,
-                        "ymax": ymax,
-                        "grade": grade,
-                        "harga": harga
+                            "ymax": ymax
+                        }
                     })
-            else:
-                # Alternative YOLOv5 format
-                for r in results:
-                    if hasattr(r, 'boxes') and r.boxes is not None:
-                        for box in r.boxes:
-                            cls_id = int(box.cls)
-                            conf = float(box.conf)
-                            xyxy = box.xyxy[0].tolist()
-                            xmin, ymin, xmax, ymax = map(int, xyxy)
-                            label = model.names[cls_id]
-
-                            grade, harga = hitung_grade_dan_harga(label, xmin, ymin, xmax, ymax)
-
-                            output.append({
-                                "label": label,
-                                "confidence": conf,
-                                "xmin": xmin,
-                                "ymin": ymin,
-                                "xmax": xmax,
-                                "ymax": ymax,
-                                "grade": grade,
-                                "harga": harga
-                            })
 
         # Clean up
         if os.path.exists(image_path):
             os.remove(image_path)
             
-        return jsonify(output)
+        return jsonify({
+            "success": True,
+            "detections": output,
+            "total_mangoes": len(output)
+        })
         
     except Exception as e:
         # Clean up on error
@@ -177,7 +87,8 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'model_loaded': model is not None,
-        'model_type': model_type if model is not None else None
+        'model_type': 'yolov8',
+        'model_file': 'best2.pt'
     })
 
 if __name__ == '__main__':
