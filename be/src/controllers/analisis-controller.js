@@ -1,7 +1,7 @@
 const axios = require("axios");
 const FormData = require("form-data");
 const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient(); // Pastikan prisma client sudah diinisialisasi
+const prisma = new PrismaClient();
 const fs = require("fs");
 const path = require("path");
 
@@ -19,25 +19,18 @@ class PredictController {
 
       const predictions = flaskRes.data;
 
-      const userId = req.user?.id;
-
-      if (userId) {
+      if (predictions.success && predictions.detections) {
         await Promise.all(
-          predictions.map(async (pred) => {
-            await prisma.prediksi.create({
+          predictions.detections.map(async (detection) => {
+            await prisma.analisis.create({
               data: {
                 imageUrl: filePath,
-                user_id: userId,
-                kualitas: pred.grade,
-                harga: pred.harga,
+                tingkat_kematangan: detection.ripeness_level,
               },
             });
           })
         );
       }
-
-      // Hapus file sementara
-      fs.unlinkSync(filePath);
 
       res.json({ success: true, data: predictions });
     } catch (err) {
