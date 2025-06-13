@@ -158,8 +158,8 @@ class _ImageInputPageState extends State<ImageInputPage> {
               height: 220,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.indigo.shade400),
-                color: Colors.indigo.shade100,
+                border: Border.all(color: Colors.grey.shade400),
+                color: Colors.grey.shade100,
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
@@ -245,7 +245,7 @@ class _ImageInputPageState extends State<ImageInputPage> {
               label: const Text("Pilih dari Galeri"),
               style: ElevatedButton.styleFrom(
                 minimumSize: const Size.fromHeight(50),
-                backgroundColor: Colors.indigo,
+                backgroundColor: Colors.teal,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
