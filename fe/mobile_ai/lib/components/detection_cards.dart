@@ -16,7 +16,7 @@ class DetectionCards extends StatelessWidget {
         final height = (bbox['ymax'] ?? 0) - (bbox['ymin'] ?? 0);
 
         return Card(
-          color: const Color.fromARGB(255, 255, 255, 255),
+          color: Colors.deepPurple.shade50,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           margin: const EdgeInsets.symmetric(vertical: 8),
           child: Padding(
