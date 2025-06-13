@@ -36,7 +36,7 @@ class ImagePreviewBox extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
         child: Container(
-          color: Colors.grey[200],
+          color: Colors.teal[300],
           child: Center(child: child),
         ),
       ),
