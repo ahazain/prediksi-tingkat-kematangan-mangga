@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'pages/image_input_page.dart';
+import 'pages/splash_screen.dart'; // Import splash screen
 
 void main() {
   runApp(const MyApp());
@@ -11,9 +11,10 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Image Picker Demo',
+      title: 'Deteksi Mangga',
       theme: ThemeData(primarySwatch: Colors.blue),
-      home: const ImageInputPage(),
+      debugShowCheckedModeBanner: false,
+      home: const SplashScreen(), // Ganti ke SplashScreen
     );
   }
 }

@@ -1,3 +1,4 @@
+// Import tetap seperti sebelumnya
 import 'dart:io' show File;
 import 'dart:typed_data';
 import 'dart:convert';
@@ -7,7 +8,6 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
-
 import '../components/section_title.dart';
 import '../components/box_overlay_painter.dart';
 import '../components/detection_cards.dart';
@@ -22,8 +22,53 @@ class _ImageInputPageState extends State<ImageInputPage> {
   final ImagePicker _picker = ImagePicker();
   File? _imageFile;
   Uint8List? _imageBytes;
-  Uint8List? _processedImageBytes;
   Map<String, dynamic>? _predictionJson;
+  Widget _buildRoundedButton({
+  required IconData icon,
+  required String label,
+  required Color color1,
+  required Color color2,
+  required VoidCallback onTap,
+}) {
+  return GestureDetector(
+    onTap: onTap,
+    child: Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [color1, color2],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(30),
+        boxShadow: [
+          BoxShadow(
+            color: color2.withOpacity(0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: Colors.white),
+          const SizedBox(width: 10),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          )
+        ],
+      ),
+    ),
+  );
+}
 
   Future<void> _pickImage(ImageSource source) async {
     try {
@@ -38,14 +83,12 @@ class _ImageInputPageState extends State<ImageInputPage> {
           setState(() {
             _imageBytes = bytes;
             _imageFile = null;
-            _processedImageBytes = null;
             _predictionJson = null;
           });
         } else {
           setState(() {
             _imageFile = File(pickedFile.path);
             _imageBytes = null;
-            _processedImageBytes = null;
             _predictionJson = null;
           });
         }
@@ -73,7 +116,7 @@ class _ImageInputPageState extends State<ImageInputPage> {
     try {
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse('http://127.0.0.1:5000/predict'),
+        Uri.parse('https://api.newshub.store/predict'),
       );
 
       if (kIsWeb) {
@@ -99,33 +142,12 @@ class _ImageInputPageState extends State<ImageInputPage> {
       final bytes = await response.stream.toBytes();
       final contentType = response.headers['content-type'] ?? '';
 
-      if (response.statusCode == 200) {
-        if (contentType.contains('image')) {
-          setState(() {
-            _processedImageBytes = bytes;
-            _predictionJson = null;
-          });
-        } else {
-          final responseString = utf8.decode(bytes);
-          try {
-            final parsed = jsonDecode(responseString);
-            if (parsed is Map<String, dynamic>) {
-              setState(() {
-                _processedImageBytes = null;
-                _predictionJson = parsed;
-              });
-            } else {
-              throw Exception("Format tidak dikenali");
-            }
-          } catch (_) {
-            setState(() {
-              _processedImageBytes = null;
-              _predictionJson = {'hasil': responseString};
-            });
-          }
-        }
-      } else {
-        throw Exception('Gagal: ${response.statusCode}');
+      final responseString = utf8.decode(bytes);
+      final parsed = jsonDecode(responseString);
+      if (parsed is Map<String, dynamic>) {
+        setState(() {
+          _predictionJson = parsed;
+        });
       }
     } catch (e) {
       debugPrint("Error saat kirim gambar: $e");
@@ -135,51 +157,132 @@ class _ImageInputPageState extends State<ImageInputPage> {
     }
   }
 
+  Future<ui.Image> _loadImageForPainting() async {
+    if (_imageBytes != null) {
+      return decodeImageFromList(_imageBytes!);
+    } else if (_imageFile != null) {
+      final bytes = await _imageFile!.readAsBytes();
+      return decodeImageFromList(bytes);
+    } else {
+      throw Exception("Tidak ada gambar untuk decoding.");
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final imageWidget = _imageBytes != null
-        ? Image.memory(_imageBytes!, fit: BoxFit.cover)
-        : _imageFile != null
-            ? Image.file(_imageFile!, fit: BoxFit.cover)
-            : const Center(child: Text("Tidak ada gambar"));
+    final imageWidget = (_imageBytes != null || _imageFile != null)
+        ? (_imageBytes != null
+            ? Image.memory(_imageBytes!, fit: BoxFit.cover)
+            : Image.file(_imageFile!, fit: BoxFit.cover))
+        : Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.image_outlined, size: 100, color: Colors.grey[400]),
+              const SizedBox(height: 10),
+              Text(
+                "Belum ada gambar",
+                style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+              ),
+              const SizedBox(height: 5),
+              const Text(
+                "Silakan ambil atau pilih gambar untuk mulai deteksi mangga",
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: Colors.black54),
+              ),
+            ],
+          );
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Deteksi Mangga"),
-        backgroundColor: Colors.deepPurple,
+      extendBody: true, // ✅ Agar bagian bawah transparan menyatu ke body
+      backgroundColor: const Color(0xFFF5F7FB),
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(kToolbarHeight),
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Color.fromRGBO(63, 81, 181, 1),
+                Color.fromRGBO(68, 138, 255, 1)
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          child: AppBar(
+            elevation: 0,
+            backgroundColor: Colors.transparent,
+            title: const Text(
+              "Deteksi Mangga",
+              style: TextStyle(
+                color: Colors.white,
+                fontFamily: 'Chillax',
+                fontWeight: FontWeight.bold,
+                fontSize: 22,
+              ),
+            ),
+            centerTitle: true,
+            iconTheme: const IconThemeData(color: Colors.white),
+          ),
+        ),
       ),
+
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 160),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SectionTitle(title: "Gambar yang Dipilih"),
-            Container(
-              height: 220,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey.shade400),
-                color: Colors.grey.shade100,
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 500),
-                  child: imageWidget,
-                  transitionBuilder: (child, animation) {
-                    return FadeTransition(opacity: animation, child: child);
-                  },
+            if (_imageBytes == null && _imageFile == null)
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 100),
+                height: 250,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF6A93F8), Color(0xFF56C5F3)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(30),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.blueAccent.withOpacity(0.2),
+                      blurRadius: 12,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                padding: const EdgeInsets.all(20),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(Icons.image_search_rounded, size: 100, color: Colors.white),
+                      SizedBox(height: 12),
+                      Text(
+                        "Ayo ukur tingkat kematangan manggamu!",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      SizedBox(height: 6),
+                      Text(
+                        "Ambil atau pilih gambar untuk melihat hasil deteksi",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 14, color: Colors.white70),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 20),
 
-            if (_processedImageBytes != null &&
-                _predictionJson != null &&
-                _predictionJson!.containsKey('detections')) ...[
-              const SectionTitle(title: "Hasil Deteksi (Bounding Box)"),
+            if (_predictionJson != null && _predictionJson!.containsKey('detections')) ...[
+              const SizedBox(height: 24),
+              const SectionTitle(title: "Hasil Deteksi", color: Colors.white),
               FutureBuilder<ui.Image>(
-                future: decodeImageFromList(_processedImageBytes!),
+                future: _loadImageForPainting(),
                 builder: (context, snapshot) {
                   if (!snapshot.hasData) {
                     return const Center(child: CircularProgressIndicator());
@@ -187,73 +290,91 @@ class _ImageInputPageState extends State<ImageInputPage> {
 
                   final detections = _predictionJson!['detections'];
                   final image = snapshot.data!;
+                  final aspectRatio = image.width / image.height;
+
                   return Container(
-                    width: double.infinity,
-                    height: image.height.toDouble() * 0.5,
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    child: CustomPaint(
-                      painter: BoxOverlayPainter(image, detections),
-                      child: const SizedBox.expand(),
+                    margin: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(30),
+                      color: Colors.white,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.grey.withOpacity(0.1),
+                          blurRadius: 8,
+                          offset: const Offset(0, 6),
+                        )
+                      ],
+                    ),
+                    child: AspectRatio(
+                      aspectRatio: aspectRatio,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(30),
+                        child: CustomPaint(
+                          painter: BoxOverlayPainter(image, detections),
+                          child: const SizedBox.expand(),
+                        ),
+                      ),
                     ),
                   );
                 },
               ),
-              const SizedBox(height: 20),
             ],
 
-            if (_predictionJson != null) ...[
-              const SectionTitle(title: "Detail Hasil Deteksi"),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 500),
-                child: _predictionJson!.containsKey('detections')
-                    ? DetectionCards(detections: _predictionJson!['detections'])
-                    : Column(
-                        key: const ValueKey("fallback_json"),
-                        children: _predictionJson!.entries.map((entry) {
-                          return Card(
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8)),
-                            elevation: 2,
-                            margin: const EdgeInsets.symmetric(vertical: 6),
-                            child: ListTile(
-                              title: Text(entry.key,
-                                  style: const TextStyle(fontWeight: FontWeight.bold)),
-                              subtitle: Text(entry.value.toString()),
-                            ),
-                          );
-                        }).toList(),
-                      ),
+            if (_predictionJson != null && _predictionJson!.containsKey('detections')) ...[
+              const SectionTitle(title: "Detail Hasil Deteksi", color: Colors.white),
+              const SizedBox(height: 10),
+              FutureBuilder<ui.Image>(
+                future: _loadImageForPainting(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) return const SizedBox();
+
+                  final image = snapshot.data!;
+                  final screenWidth = MediaQuery.of(context).size.width;
+                  final padding = 40.0;
+                  final displayWidth = screenWidth - padding;
+
+                  return DetectionCards(
+                    detections: _predictionJson!['detections'],
+                    originalWidth: image.width,
+                    originalHeight: image.height,
+                    displayWidth: displayWidth,
+                  );
+                },
               ),
             ],
-
-            ElevatedButton.icon(
-              onPressed: () => _pickImage(ImageSource.camera),
-              icon: const Icon(Icons.camera_alt),
-              label: const Text("Ambil Foto"),
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size.fromHeight(50),
-                backgroundColor: Colors.indigo,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-            const SizedBox(height: 10),
-            ElevatedButton.icon(
-              onPressed: () => _pickImage(ImageSource.gallery),
-              icon: const Icon(Icons.photo_library),
-              label: const Text("Pilih dari Galeri"),
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size.fromHeight(50),
-                backgroundColor: Colors.teal,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
           ],
         ),
       ),
+
+      // ✅ Transparan bottomNavigationBar
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildRoundedButton(
+                icon: Icons.camera_alt,
+                label: "Ambil Foto",
+                color1: const ui.Color.fromRGBO(63, 81, 181, 1),
+                color2: const ui.Color.fromRGBO(68, 138, 255, 1),
+                onTap: () => _pickImage(ImageSource.camera),
+              ),
+              const SizedBox(height: 12),
+              _buildRoundedButton(
+                icon: Icons.photo_library,
+                label: "Pilih dari Galeri",
+                color1: const ui.Color.fromRGBO(63, 81, 181, 1),
+                color2: const ui.Color.fromRGBO(68, 138, 255, 1),
+                onTap: () => _pickImage(ImageSource.gallery),
+              ),
+            ],
+          ),
+        ),
+      ),
+
+
     );
   }
+
 }

@@ -7,24 +7,77 @@ class BoxOverlayPainter extends CustomPainter {
 
   BoxOverlayPainter(this.image, this.detections);
 
+  final Map<String, Color> ripenessColors = {
+    'sangat mentah': Colors.deepPurple,
+    'mentah': Colors.blueAccent,
+    'mengkal': Colors.greenAccent,
+    'matang': Colors.amberAccent,
+    'sangat matang': Colors.redAccent,
+  };
+
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
-      ..color = Colors.red;
+    final scaleX = size.width / image.width;
+    final scaleY = size.height / image.height;
 
-    canvas.drawImage(image, Offset.zero, Paint());
+    final imageRect = Rect.fromLTWH(0, 0, size.width, size.height);
+    final srcRect = Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble());
+    canvas.drawImageRect(image, srcRect, imageRect, Paint());
 
-    for (var item in detections) {
+    for (int i = 0; i < detections.length; i++) {
+      final item = detections[i];
       final bbox = item['bounding_box'];
-      final rect = Rect.fromLTRB(
-        bbox['xmin'].toDouble(),
-        bbox['ymin'].toDouble(),
-        bbox['xmax'].toDouble(),
-        bbox['ymax'].toDouble(),
-      );
+
+      final left = bbox['xmin'].toDouble() * scaleX;
+      final top = bbox['ymin'].toDouble() * scaleY;
+      final right = bbox['xmax'].toDouble() * scaleX;
+      final bottom = bbox['ymax'].toDouble() * scaleY;
+
+      final rect = Rect.fromLTRB(left, top, right, bottom);
+
+      final label = (item['ripeness_level'] ?? 'tidak diketahui').toLowerCase();
+      final grade = item['grade'] ?? '-';
+      final color = ripenessColors[label] ?? Colors.grey;
+
+      final paint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..color = color;
+
       canvas.drawRect(rect, paint);
+      final textPainter = TextPainter(
+        text: TextSpan(
+          children: [
+            TextSpan(
+              text: 'Mangga ${i + 1}\n',
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Satoshi',
+              ),
+            ),
+            TextSpan(
+              text: 'Grade: $grade',
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.normal,
+                fontFamily: 'Satoshi',
+              ),
+            ),
+          ],
+        ),
+        textAlign: TextAlign.left,
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: size.width);
+
+
+      final offsetY = (rect.top - textPainter.height - 2) < 0
+          ? rect.top + 2
+          : rect.top - textPainter.height - 2;
+
+      textPainter.paint(canvas, Offset(rect.left, offsetY));
     }
   }
 
