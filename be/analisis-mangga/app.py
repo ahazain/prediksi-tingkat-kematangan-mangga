@@ -5,7 +5,7 @@ from ultralytics import YOLO
 
 app = Flask(__name__)
 CORS(app)
-MODEL_PATH = 'best-fix-1.pt'
+MODEL_PATH = 'best.pt'
 TEMP_DIR = 'temp'
 
 # Load YOLOv8 model
