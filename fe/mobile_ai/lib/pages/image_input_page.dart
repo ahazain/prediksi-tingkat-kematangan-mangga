@@ -351,15 +351,10 @@ class _ImageInputPageState extends State<ImageInputPage> {
             child: _buildGradientCircleButton(
               icon: Icons.videocam,
               onTap: () {
-<<<<<<< Updated upstream
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => LiveCameraPage()),
                 );
-=======
-                _dialNotifier.value = false;
-                Navigator.push(context, MaterialPageRoute(builder: (context) => LiveDetectionPage()));
->>>>>>> Stashed changes
               },
             ),
           ),
