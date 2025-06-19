@@ -9,10 +9,10 @@ import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:camera/camera.dart';
-import 'package:mobile_ai/pages/live_detection_pages.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:image/image.dart' as img;
+import './live_camera_page.dart';
 import '../components/section_title.dart';
 import '../components/box_overlay_painter.dart';
 import '../components/detection_cards.dart';
@@ -430,7 +430,7 @@ class _ImageInputPageState extends State<ImageInputPage> {
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => LiveDetectionPage()),
+                  MaterialPageRoute(builder: (context) => LiveCameraPage()),
                 );
               },
             ),
