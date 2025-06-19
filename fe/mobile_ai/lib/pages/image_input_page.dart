@@ -16,6 +16,9 @@ import 'package:image/image.dart' as img;
 import '../components/section_title.dart';
 import '../components/box_overlay_painter.dart';
 import '../components/detection_cards.dart';
+import 'package:flutter_speed_dial/flutter_speed_dial.dart';
+import 'package:mobile_ai/pages/history_page.dart';
+
 
 class ImageInputPage extends StatefulWidget {
   const ImageInputPage({super.key});
@@ -77,102 +80,7 @@ class _ImageInputPageState extends State<ImageInputPage> {
       ),
     );
   }
-
-  // Future<void> _initCamera() async {
-  //   _cameras = await availableCameras();
-  //   final backCamera = _cameras!.firstWhere(
-  //     (camera) => camera.lensDirection == CameraLensDirection.back,
-  //   );
-
-  //   _cameraController = CameraController(
-  //     backCamera,
-  //     ResolutionPreset.medium,
-  //     enableAudio: false,
-  //   );
-
-  //   await _cameraController!.initialize();
-
-  //   _cameraController!.startImageStream((CameraImage image) async {
-  //     if (_isDetecting) return;
-  //     _isDetecting = true;
-
-  //     try {
-  //       // Convert YUV -> JPEG -> Uint8List
-  //       final bytes = await convertYUV420toImage(image);
-  //       await _sendImageBytesToBackend(bytes);
-  //     } finally {
-  //       _isDetecting = false;
-  //     }
-  //   });
-
-  //   setState(() {});
-  // }
-
-  // Future<Uint8List> convertYUV420toImage(CameraImage image) async {
-  //   final int width = image.width;
-  //   final int height = image.height;
-  //   final yRowStride = image.planes[0].bytesPerRow;
-  //   final uvRowStride = image.planes[1].bytesPerRow;
-  //   final uvPixelStride = image.planes[1].bytesPerPixel!;
-
-  //   final img.Image rgbImage = img.Image(width, height);
-
-  //   for (int y = 0; y < height; y++) {
-  //     for (int x = 0; x < width; x++) {
-  //       final int uvIndex = uvPixelStride * (x ~/ 2) + uvRowStride * (y ~/ 2);
-  //       final int index = y * yRowStride + x;
-
-  //       final yp = image.planes[0].bytes[index];
-  //       final up = image.planes[1].bytes[uvIndex];
-  //       final vp = image.planes[2].bytes[uvIndex];
-
-  //       final r = (yp + 1.370705 * (vp - 128)).clamp(0, 255).toInt();
-  //       final g = (yp - 0.337633 * (up - 128) - 0.698001 * (vp - 128))
-  //           .clamp(0, 255)
-  //           .toInt();
-  //       final b = (yp + 1.732446 * (up - 128)).clamp(0, 255).toInt();
-
-  //       rgbImage.setPixelRgb(x, y, r, g, b);
-  //     }
-  //   }
-
-  //   final jpg = img.encodeJpg(rgbImage, quality: 85);
-  //   return Uint8List.fromList(jpg);
-  // }
-
-  // Future<void> _sendImageBytesToBackend(Uint8List imageBytes) async {
-  //   try {
-  //     var request = http.MultipartRequest(
-  //       'POST',
-  //       Uri.parse('https://api.newshub.store/predict'),
-  //     );
-
-  //     request.files.add(
-  //       http.MultipartFile.fromBytes(
-  //         'image',
-  //         imageBytes,
-  //         filename: 'frame.jpg',
-  //         contentType: MediaType('image', 'jpeg'),
-  //       ),
-  //     );
-
-  //     final response = await request.send();
-  //     final bytes = await response.stream.toBytes();
-  //     final responseString = utf8.decode(bytes);
-
-  //     if (response.statusCode == 200) {
-  //       final parsed = jsonDecode(responseString);
-  //       setState(() {
-  //         _predictionJson = parsed;
-  //       });
-  //     } else {
-  //       debugPrint("Error: ${response.statusCode}");
-  //     }
-  //   } catch (e) {
-  //     debugPrint("Live stream upload error: $e");
-  //   }
-  // }
-
+  
   Future<void> _pickImage(ImageSource source) async {
     try {
       final XFile? pickedFile = await _picker.pickImage(
@@ -284,6 +192,36 @@ class _ImageInputPageState extends State<ImageInputPage> {
       throw Exception("Tidak ada gambar untuk decoding.");
     }
   }
+
+  Widget _buildGradientCircleButton({required IconData icon, required VoidCallback onTap}) {
+  return GestureDetector(
+    onTap: onTap,
+    child: Container(
+      width: 60,
+      height: 60,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          colors: [
+            Color(0xFF2196F3), // biru muda
+            Color(0xFF1565C0), // biru gelap
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x40000000),
+            blurRadius: 6,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Icon(icon, color: Colors.white),
+    ),
+  );
+}
+
 
   @override
   Widget build(BuildContext context) {
@@ -473,47 +411,68 @@ class _ImageInputPageState extends State<ImageInputPage> {
       ),
 
       // ✅ Transparan bottomNavigationBar
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildRoundedButton(
-                icon: Icons.videocam,
-                label: "Live Kamera",
-                color1: const Color.fromRGBO(63, 81, 181, 1),
-                color2: const Color.fromRGBO(68, 138, 255, 1),
-                onTap: () async {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => LiveDetectionPage(),
-                    ), // Nama halaman baru kita
-                  );
-                },
-              ),
-              // TAMBAHKAN JARAK DI SINI
-              const SizedBox(height: 12),
-              // _buildRoundedButton(
-              //   icon: Icons.camera_alt,
-              //   label: "Ambil Foto",
-              //   color1: const ui.Color.fromRGBO(63, 81, 181, 1),
-              //   color2: const ui.Color.fromRGBO(68, 138, 255, 1),
-              //   onTap: () => _pickImage(ImageSource.camera),
-              // ),
-              const SizedBox(height: 12),
-              _buildRoundedButton(
-                icon: Icons.photo_library,
-                label: "Pilih dari Galeri",
-                color1: const ui.Color.fromRGBO(63, 81, 181, 1),
-                color2: const ui.Color.fromRGBO(68, 138, 255, 1),
-                onTap: () => _pickImage(ImageSource.gallery),
-              ),
-            ],
+      floatingActionButton: SpeedDial(
+        icon: Icons.add,
+        activeIcon: Icons.close,
+        backgroundColor: const Color.fromRGBO(63, 81, 181, 1),
+        foregroundColor: Colors.white,
+        overlayOpacity: 0,
+        spacing: 12,
+        spaceBetweenChildren: 12,
+        children: [
+          SpeedDialChild(
+            label: 'Live Kamera',
+            labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            child: _buildGradientCircleButton(
+              icon: Icons.videocam,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => LiveDetectionPage()),
+                );
+              },
+            ),
+          ),
+          SpeedDialChild(
+            label: 'Ambil Foto',
+            labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            child: _buildGradientCircleButton(
+              icon: Icons.camera_alt,
+              onTap: () => _pickImage(ImageSource.camera),
+            ),
+          ),
+          SpeedDialChild(
+            label: 'Pilih dari Galeri',
+            labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            child: _buildGradientCircleButton(
+              icon: Icons.photo_library,
+              onTap: () => _pickImage(ImageSource.gallery),
+            ),
+          ),
+          SpeedDialChild(
+          label: 'Riwayat',
+          labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: _buildGradientCircleButton(
+            icon: Icons.history,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const HistoryPage()),
+              );
+            },
           ),
         ),
+        ],
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 }
