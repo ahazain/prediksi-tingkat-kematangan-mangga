@@ -378,6 +378,7 @@ class _ImageInputPageState extends State<ImageInputPage> {
               onTap: () => _pickImage(ImageSource.gallery),
             ),
           ),
+          // KODE BARU (BENAR)
           SpeedDialChild(
             label: 'Riwayat',
             labelStyle: const TextStyle(fontWeight: FontWeight.bold),
