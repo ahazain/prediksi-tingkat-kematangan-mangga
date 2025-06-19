@@ -6,8 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import '../components/box_overlay_painter.dart';
-import '../components/detection_cards.dart'; // sesuaikan path jika berbeda
-
+import '../components/detection_cards.dart';
 
 class ComparePage extends StatefulWidget {
   final File? imageFile;
@@ -31,8 +30,7 @@ class _ComparePageState extends State<ComparePage> {
   }
 
   Future<ui.Image> _loadImage() async {
-    final bytes = widget.imageBytes ??
-        await widget.imageFile!.readAsBytes();
+    final bytes = widget.imageBytes ?? await widget.imageFile!.readAsBytes();
     return decodeImageFromList(bytes);
   }
 
@@ -44,18 +42,22 @@ class _ComparePageState extends State<ComparePage> {
       );
 
       if (widget.imageBytes != null) {
-        request.files.add(http.MultipartFile.fromBytes(
-          'image',
-          widget.imageBytes!,
-          filename: 'compare.jpg',
-          contentType: MediaType('image', 'jpeg'),
-        ));
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            'image',
+            widget.imageBytes!,
+            filename: 'compare.jpg',
+            contentType: MediaType('image', 'jpeg'),
+          ),
+        );
       } else {
-        request.files.add(await http.MultipartFile.fromPath(
-          'image',
-          widget.imageFile!.path,
-          contentType: MediaType('image', 'jpeg'),
-        ));
+        request.files.add(
+          await http.MultipartFile.fromPath(
+            'image',
+            widget.imageFile!.path,
+            contentType: MediaType('image', 'jpeg'),
+          ),
+        );
       }
 
       final response = await request.send();
@@ -76,67 +78,90 @@ class _ComparePageState extends State<ComparePage> {
   }
 
   Widget _buildDetectionBox(String title, String key, ui.Image image) {
-  final aspectRatio = image.width / image.height;
-  final detections = compareResult![key]['detections'] as List;
+    final aspectRatio = image.width / image.height;
+    final detections = compareResult![key]['detections'] as List;
 
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      Text(
-        title,
-        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-      ),
-      const SizedBox(height: 10),
-      AspectRatio(
-        aspectRatio: aspectRatio,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: CustomPaint(
-            painter: BoxOverlayPainter(image, detections),
-            child: Container(), // kosong untuk mempertahankan ukuran
-          ),
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      elevation: 6,
+      margin: const EdgeInsets.only(bottom: 24),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+                color: Color(0xFF3D5AFE),
+              ),
+            ),
+            const SizedBox(height: 16),
+            AspectRatio(
+              aspectRatio: aspectRatio,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: CustomPaint(
+                  painter: BoxOverlayPainter(image, detections),
+                  child: Container(),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            DetectionCards(
+              detections: detections,
+              originalWidth: image.width,
+              originalHeight: image.height,
+              displayWidth:
+                  MediaQuery.of(context).size.width - 64, // padding 32 * 2
+            ),
+          ],
         ),
       ),
-      const SizedBox(height: 12),
-      DetectionCards(
-        detections: detections,
-        originalWidth: image.width,
-        originalHeight: image.height,
-        displayWidth: MediaQuery.of(context).size.width - 32, // 16 padding kiri & kanan
-      ),
-      const SizedBox(height: 24),
-    ],
-  );
-}
-
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFF0F2F5),
       appBar: AppBar(
         title: const Text("Perbandingan Deteksi"),
-        backgroundColor: const Color.fromRGBO(63, 81, 181, 1),
+        elevation: 0,
+        foregroundColor: Colors.white,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF2979FF), Color(0xFF3D5AFE)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
       ),
       body: compareResult == null
-    ? const Center(child: CircularProgressIndicator())
-    : FutureBuilder<ui.Image>(
-        future: _uiImage,
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+          ? const Center(child: CircularProgressIndicator())
+          : FutureBuilder<ui.Image>(
+              future: _uiImage,
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-          final image = snapshot.data!;
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildDetectionBox("Default NMS", 'default_nms', image),
-                _buildDetectionBox("DIoU-NMS", 'diou_nms', image),
-              ],
+                final image = snapshot.data!;
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      _buildDetectionBox("Default NMS", 'default_nms', image),
+                      _buildDetectionBox("DIoU-NMS", 'diou_nms', image),
+                    ],
+                  ),
+                );
+              },
             ),
-          );
-        },
-      ),
     );
   }
 }

@@ -15,11 +15,11 @@ class DetectionCards extends StatelessWidget {
   });
 
   final Map<String, Color> ripenessColors = const {
-      'sangat matang': Color(0xFFD2691E), // orange-cokelat
-      'matang': Color(0xFF7CFC00),        // hijau terang
-      'mengkal': Color(0xFFFFD700),       // kuning
-      'mentah': Color(0xFFFF6B6B),        // merah soft
-      'sangat mentah': Color(0xFF8B0000),  // merah lembut
+    'sangat matang': Color(0xFFD2691E),  // orange-cokelat
+    'matang': Color(0xFF7CFC00),         // hijau terang
+    'mengkal': Color(0xFFFFD700),        // kuning
+    'mentah': Color(0xFFFF6B6B),         // merah soft
+    'sangat mentah': Color(0xFF8B0000),  // merah gelap
   };
 
   @override
@@ -50,18 +50,18 @@ class DetectionCards extends StatelessWidget {
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                cardColor.withOpacity(0.9),
-                cardColor.withOpacity(0.75),
+                cardColor.withOpacity(0.25),
+                cardColor.withOpacity(0.15),
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: cardColor.withOpacity(0.35),
-                blurRadius: 12,
-                offset: const Offset(0, 8),
+                color: cardColor.withOpacity(0.12),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
               ),
             ],
           ),
@@ -74,7 +74,7 @@ class DetectionCards extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                   fontSize: 18,
                   fontFamily: 'Satoshi',
-                  color: Colors.white,
+                  color: Colors.black87,
                 ),
               ),
               const SizedBox(height: 6),
@@ -93,7 +93,7 @@ class DetectionCards extends StatelessWidget {
     return Text(
       text,
       style: const TextStyle(
-        color: Colors.white,
+        color: Colors.black87,
         fontSize: 14,
         fontFamily: 'Satoshi',
       ),
