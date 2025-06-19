@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import '../components/box_overlay_painter.dart';
+import '../components/detection_cards.dart'; // sesuaikan path jika berbeda
+
 
 class ComparePage extends StatefulWidget {
   final File? imageFile;
@@ -73,8 +75,9 @@ class _ComparePageState extends State<ComparePage> {
     }
   }
 
-  Widget _buildDetectionBox(String title, List detections, ui.Image image) {
+  Widget _buildDetectionBox(String title, String key, ui.Image image) {
   final aspectRatio = image.width / image.height;
+  final detections = compareResult![key]['detections'] as List;
 
   return Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -90,11 +93,18 @@ class _ComparePageState extends State<ComparePage> {
           borderRadius: BorderRadius.circular(20),
           child: CustomPaint(
             painter: BoxOverlayPainter(image, detections),
-            child: Container(), // ✅ Container kosong agar tetap punya ukuran
+            child: Container(), // kosong untuk mempertahankan ukuran
           ),
         ),
       ),
-      const SizedBox(height: 20),
+      const SizedBox(height: 12),
+      DetectionCards(
+        detections: detections,
+        originalWidth: image.width,
+        originalHeight: image.height,
+        displayWidth: MediaQuery.of(context).size.width - 32, // 16 padding kiri & kanan
+      ),
+      const SizedBox(height: 24),
     ],
   );
 }
@@ -108,24 +118,25 @@ class _ComparePageState extends State<ComparePage> {
         backgroundColor: const Color.fromRGBO(63, 81, 181, 1),
       ),
       body: compareResult == null
-          ? const Center(child: CircularProgressIndicator())
-          : FutureBuilder<ui.Image>(
-              future: _uiImage,
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+    ? const Center(child: CircularProgressIndicator())
+    : FutureBuilder<ui.Image>(
+        future: _uiImage,
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
-                final image = snapshot.data!;
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      _buildDetectionBox("Default NMS", compareResult!['default_nms']['detections'], image),
-                      _buildDetectionBox("DIoU-NMS", compareResult!['diou_nms']['detections'], image),
-                    ],
-                  ),
-                );
-              },
+          final image = snapshot.data!;
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildDetectionBox("Default NMS", 'default_nms', image),
+                _buildDetectionBox("DIoU-NMS", 'diou_nms', image),
+              ],
             ),
+          );
+        },
+      ),
     );
   }
 }
