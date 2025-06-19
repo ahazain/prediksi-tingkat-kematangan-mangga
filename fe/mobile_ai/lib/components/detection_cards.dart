@@ -15,11 +15,11 @@ class DetectionCards extends StatelessWidget {
   });
 
   final Map<String, Color> ripenessColors = const {
-    'sangat mentah': Color(0xFF7E57C2), // ungu muda
-    'mentah': Color(0xFF42A5F5),        // biru muda
-    'mengkal': Color(0xFF66BB6A),       // hijau muda
-    'matang': Color(0xFFFFCA28),        // kuning emas
-    'sangat matang': Color(0xFFEF5350), // merah lembut
+      'sangat matang': Color(0xFFD2691E), // orange-cokelat
+      'matang': Color(0xFF7CFC00),        // hijau terang
+      'mengkal': Color(0xFFFFD700),       // kuning
+      'mentah': Color(0xFFFF6B6B),        // merah soft
+      'sangat mentah': Color(0xFF8B0000),  // merah lembut
   };
 
   @override

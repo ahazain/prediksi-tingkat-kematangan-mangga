@@ -18,70 +18,36 @@ import '../components/box_overlay_painter.dart';
 import '../components/detection_cards.dart';
 import 'package:flutter_speed_dial/flutter_speed_dial.dart';
 import 'package:mobile_ai/pages/history_page.dart';
-
+import 'package:mobile_ai/pages/compare_page.dart';
 
 class ImageInputPage extends StatefulWidget {
   const ImageInputPage({super.key});
+
   @override
   State<ImageInputPage> createState() => _ImageInputPageState();
 }
 
 class _ImageInputPageState extends State<ImageInputPage> {
-  CameraController? _cameraController;
-  bool _isDetecting = false;
-  List<CameraDescription>? _cameras;
   final ImagePicker _picker = ImagePicker();
   File? _imageFile;
   Uint8List? _imageBytes;
   Map<String, dynamic>? _predictionJson;
-  Widget _buildRoundedButton({
-    required IconData icon,
-    required String label,
-    required Color color1,
-    required Color color2,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        margin: const EdgeInsets.symmetric(horizontal: 4),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [color1, color2],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(30),
-          boxShadow: [
-            BoxShadow(
-              color: color2.withOpacity(0.3),
-              blurRadius: 12,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: Colors.white),
-            const SizedBox(width: 10),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+  late ValueNotifier<bool> _dialNotifier;
+
+  @override
+  void initState() {
+    super.initState();
+    _dialNotifier = ValueNotifier(false);
   }
-  
+
+  @override
+  void dispose() {
+    _dialNotifier.dispose();
+    super.dispose();
+  }
+
   Future<void> _pickImage(ImageSource source) async {
+    _dialNotifier.value = false; // Tutup SpeedDial
     try {
       final XFile? pickedFile = await _picker.pickImage(
         source: source,
@@ -108,9 +74,9 @@ class _ImageInputPageState extends State<ImageInputPage> {
       }
     } catch (e) {
       debugPrint("Gagal mengambil gambar: $e");
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Gagal mengambil gambar")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Gagal mengambil gambar")),
+      );
     }
   }
 
@@ -131,22 +97,18 @@ class _ImageInputPageState extends State<ImageInputPage> {
       );
 
       if (kIsWeb) {
-        request.files.add(
-          http.MultipartFile.fromBytes(
-            'image',
-            _imageBytes!,
-            filename: 'image.jpg',
-            contentType: MediaType('image', 'jpeg'),
-          ),
-        );
+        request.files.add(http.MultipartFile.fromBytes(
+          'image',
+          _imageBytes!,
+          filename: 'image.jpg',
+          contentType: MediaType('image', 'jpeg'),
+        ));
       } else {
-        request.files.add(
-          await http.MultipartFile.fromPath(
-            'image',
-            _imageFile!.path,
-            contentType: MediaType('image', 'jpeg'),
-          ),
-        );
+        request.files.add(await http.MultipartFile.fromPath(
+          'image',
+          _imageFile!.path,
+          contentType: MediaType('image', 'jpeg'),
+        ));
       }
 
       final response = await request.send();
@@ -154,13 +116,7 @@ class _ImageInputPageState extends State<ImageInputPage> {
       final responseString = utf8.decode(bytes);
       final contentType = response.headers['content-type'] ?? '';
 
-      // DEBUG LOG:
-      debugPrint('Status code: ${response.statusCode}');
-      debugPrint('Content-Type: $contentType');
-      debugPrint('Response body: $responseString');
-
-      if (response.statusCode == 200 &&
-          contentType.contains('application/json')) {
+      if (response.statusCode == 200 && contentType.contains('application/json')) {
         final parsed = jsonDecode(responseString);
         if (parsed is Map<String, dynamic>) {
           setState(() {
@@ -175,9 +131,7 @@ class _ImageInputPageState extends State<ImageInputPage> {
     } catch (e) {
       debugPrint("Error saat kirim gambar: $e");
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Terjadi kesalahan saat memproses gambar"),
-        ),
+        const SnackBar(content: Text("Terjadi kesalahan saat memproses gambar")),
       );
     }
   }
@@ -194,50 +148,43 @@ class _ImageInputPageState extends State<ImageInputPage> {
   }
 
   Widget _buildGradientCircleButton({required IconData icon, required VoidCallback onTap}) {
-  return GestureDetector(
-    onTap: onTap,
-    child: Container(
-      width: 60,
-      height: 60,
-      decoration: const BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: LinearGradient(
-          colors: [
-            Color(0xFF2196F3), // biru muda
-            Color(0xFF1565C0), // biru gelap
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Color(0x40000000),
-            blurRadius: 6,
-            offset: Offset(0, 4),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 60,
+        height: 60,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: LinearGradient(
+            colors: [Color(0xFF2196F3), Color(0xFF1565C0)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
-        ],
+          boxShadow: [
+            BoxShadow(
+              color: Color(0x40000000),
+              blurRadius: 6,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Icon(icon, color: Colors.white),
       ),
-      child: Icon(icon, color: Colors.white),
-    ),
-  );
-}
-
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final imageWidget = (_imageBytes != null || _imageFile != null)
         ? (_imageBytes != null
-              ? Image.memory(_imageBytes!, fit: BoxFit.cover)
-              : Image.file(_imageFile!, fit: BoxFit.cover))
+            ? Image.memory(_imageBytes!, fit: BoxFit.cover)
+            : Image.file(_imageFile!, fit: BoxFit.cover))
         : Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(Icons.image_outlined, size: 100, color: Colors.grey[400]),
               const SizedBox(height: 10),
-              Text(
-                "Belum ada gambar",
-                style: TextStyle(fontSize: 18, color: Colors.grey[600]),
-              ),
+              Text("Belum ada gambar", style: TextStyle(fontSize: 18, color: Colors.grey[600])),
               const SizedBox(height: 5),
               const Text(
                 "Silakan ambil atau pilih gambar untuk mulai deteksi mangga",
@@ -248,17 +195,14 @@ class _ImageInputPageState extends State<ImageInputPage> {
           );
 
     return Scaffold(
-      extendBody: true, // ✅ Agar bagian bawah transparan menyatu ke body
+      extendBody: true,
       backgroundColor: const Color(0xFFF5F7FB),
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(kToolbarHeight),
         child: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [
-                Color.fromRGBO(63, 81, 181, 1),
-                Color.fromRGBO(68, 138, 255, 1),
-              ],
+              colors: [Color.fromRGBO(63, 81, 181, 1), Color.fromRGBO(68, 138, 255, 1)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -280,7 +224,6 @@ class _ImageInputPageState extends State<ImageInputPage> {
           ),
         ),
       ),
-
       body: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 160),
         child: Column(
@@ -311,20 +254,12 @@ class _ImageInputPageState extends State<ImageInputPage> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: const [
-                      Icon(
-                        Icons.image_search_rounded,
-                        size: 100,
-                        color: Colors.white,
-                      ),
+                      Icon(Icons.image_search_rounded, size: 100, color: Colors.white),
                       SizedBox(height: 12),
                       Text(
                         "Ayo ukur tingkat kematangan manggamu!",
                         textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
                       ),
                       SizedBox(height: 6),
                       Text(
@@ -336,17 +271,13 @@ class _ImageInputPageState extends State<ImageInputPage> {
                   ),
                 ),
               ),
-
-            if (_predictionJson != null &&
-                _predictionJson!.containsKey('detections')) ...[
+            if (_predictionJson != null && _predictionJson!.containsKey('detections')) ...[
               const SizedBox(height: 24),
               const SectionTitle(title: "Hasil Deteksi", color: Colors.white),
               FutureBuilder<ui.Image>(
                 future: _loadImageForPainting(),
                 builder: (context, snapshot) {
-                  if (!snapshot.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
+                  if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
                   final detections = _predictionJson!['detections'];
                   final image = snapshot.data!;
@@ -378,14 +309,7 @@ class _ImageInputPageState extends State<ImageInputPage> {
                   );
                 },
               ),
-            ],
-
-            if (_predictionJson != null &&
-                _predictionJson!.containsKey('detections')) ...[
-              const SectionTitle(
-                title: "Detail Hasil Deteksi",
-                color: Colors.white,
-              ),
+              const SectionTitle(title: "Detail Hasil Deteksi", color: Colors.white),
               const SizedBox(height: 10),
               FutureBuilder<ui.Image>(
                 future: _loadImageForPainting(),
@@ -409,8 +333,6 @@ class _ImageInputPageState extends State<ImageInputPage> {
           ],
         ),
       ),
-
-      // ✅ Transparan bottomNavigationBar
       floatingActionButton: SpeedDial(
         icon: Icons.add,
         activeIcon: Icons.close,
@@ -419,6 +341,7 @@ class _ImageInputPageState extends State<ImageInputPage> {
         overlayOpacity: 0,
         spacing: 12,
         spaceBetweenChildren: 12,
+        openCloseDial: _dialNotifier,
         children: [
           SpeedDialChild(
             label: 'Live Kamera',
@@ -428,10 +351,15 @@ class _ImageInputPageState extends State<ImageInputPage> {
             child: _buildGradientCircleButton(
               icon: Icons.videocam,
               onTap: () {
+<<<<<<< Updated upstream
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => LiveCameraPage()),
                 );
+=======
+                _dialNotifier.value = false;
+                Navigator.push(context, MaterialPageRoute(builder: (context) => LiveDetectionPage()));
+>>>>>>> Stashed changes
               },
             ),
           ),
@@ -456,20 +384,45 @@ class _ImageInputPageState extends State<ImageInputPage> {
             ),
           ),
           SpeedDialChild(
-          label: 'Riwayat',
-          labelStyle: const TextStyle(fontWeight: FontWeight.bold),
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          child: _buildGradientCircleButton(
-            icon: Icons.history,
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const HistoryPage()),
-              );
-            },
+            label: 'Riwayat',
+            labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            child: _buildGradientCircleButton(
+              icon: Icons.history,
+              onTap: () {
+                _dialNotifier.value = false;
+                Navigator.push(context, MaterialPageRoute(builder: (context) => const HistoryPage()));
+              },
+            ),
           ),
-        ),
+          SpeedDialChild(
+            label: 'Compare',
+            labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            child: _buildGradientCircleButton(
+              icon: Icons.compare_arrows,
+              onTap: () {
+                _dialNotifier.value = false;
+                if ((_imageFile != null || _imageBytes != null)) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ComparePage(
+                        imageFile: _imageFile,
+                        imageBytes: _imageBytes,
+                      ),
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Harap pilih gambar terlebih dahulu.")),
+                  );
+                }
+              },
+            ),
+          ),
         ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,

@@ -8,11 +8,11 @@ class BoxOverlayPainter extends CustomPainter {
   BoxOverlayPainter(this.image, this.detections);
 
   final Map<String, Color> ripenessColors = {
-    'sangat mentah': Colors.deepPurple,
-    'mentah': Colors.blueAccent,
-    'mengkal': Colors.greenAccent,
-    'matang': Colors.amberAccent,
-    'sangat matang': Colors.redAccent,
+    'sangat matang': Color(0xFFD2691E), // orange-cokelat
+    'matang': Color(0xFF7CFC00),        // hijau terang
+    'mengkal': Color(0xFFFFD700),       // kuning
+    'mentah': Color(0xFFFF6B6B),        // merah soft
+    'sangat mentah': Color(0xFF8B0000), 
   };
 
   @override
