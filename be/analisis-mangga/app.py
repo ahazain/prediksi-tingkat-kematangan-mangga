@@ -45,6 +45,8 @@ def cleanup_old_history(days=2):
         except Exception as e:
             db.session.rollback()
             print(f"[AUTO-CLEANUP ERROR] {e}")
+        finally:
+            db.session.remove()
 
 def start_cleanup_scheduler():
     def scheduler_loop():
@@ -267,13 +269,6 @@ def root():
     return jsonify({
         "status": "online",
         "message": "Deteksi Kematangan Mangga API is running"
-    }), 200
-
-@app.route('/health', methods=['GET'])
-def health():
-    return jsonify({
-        "status": "healthy",
-        "model_loaded": model is not None
     }), 200
 
 @app.route('/predict', methods=['POST'])
