@@ -5,12 +5,14 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from config import Config
 from models import db, History, Detection
-from datetime import datetime
+from datetime import datetime, timedelta
 from ultralytics import YOLO
 from sqlalchemy import func, extract
 from collections import defaultdict
 import torch
 import numpy as np
+import threading
+import time
 
 app = Flask(__name__)
 CORS(app)
@@ -19,6 +21,39 @@ db.init_app(app)
 migrate = Migrate(app, db)
 MODEL_PATH = 'best.pt'
 TEMP_DIR = 'temp'
+
+# Otomatis buat tabel di database jika belum ada (berguna saat pindah ke Neon.tech)
+with app.app_context():
+    try:
+        db.create_all()
+        print("[DATABASE] Inisialisasi tabel database berhasil.")
+    except Exception as e:
+        print(f"[DATABASE INIT ERROR] {e}")
+
+# Auto-cleanup data riwayat lama (otomatis reset/hapus data > 2 hari agar database selalu ringan)
+def cleanup_old_history(days=2):
+    with app.app_context():
+        try:
+            cutoff = datetime.utcnow() - timedelta(days=days)
+            deleted = History.query.filter(History.detected_at < cutoff).delete()
+            db.session.commit()
+            if deleted:
+                print(f"[AUTO-CLEANUP] Berhasil membersihkan {deleted} riwayat yang lebih dari {days} hari.")
+        except Exception as e:
+            db.session.rollback()
+            print(f"[AUTO-CLEANUP ERROR] {e}")
+
+def start_cleanup_scheduler():
+    def scheduler_loop():
+        time.sleep(5)  # Tunggu 5 detik saat startup
+        while True:
+            cleanup_old_history(days=2)
+            time.sleep(3600 * 6)  # Ulangi pemeriksaan setiap 6 jam
+
+    thread = threading.Thread(target=scheduler_loop, daemon=True)
+    thread.start()
+
+start_cleanup_scheduler()
 
 # DIoU-NMS Implementation
 def diou_nms(boxes, scores, classes, iou_threshold=0.5):
@@ -349,6 +384,12 @@ def yearly_summary():
     """
     try:
         date_str = request.args.get('date')
+        year_param = request.args.get('year')
+
+        # Default otomatis: jika tidak ada parameter, langsung ambil data hari ini!
+        if not date_str and not year_param:
+            date_str = datetime.now().strftime('%Y-%m-%d')
+
         if date_str:
             try:
                 target_date = datetime.strptime(date_str, '%Y-%m-%d').date()

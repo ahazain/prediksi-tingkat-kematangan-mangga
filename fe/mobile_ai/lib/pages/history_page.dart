@@ -13,17 +13,14 @@ class HistoryPage extends StatefulWidget {
 }
 
 class _HistoryPageState extends State<HistoryPage> {
-  DateTime _selectedDate = DateTime.now();
-  final int _selectedYear = DateTime.now().year;
-  bool _isYearMode = false;
   bool isLoading = false;
   Map<String, dynamic>? summary;
 
   @override
   void initState() {
     super.initState();
-    // Default isi riwayat langsung memuat data hari ini tanpa perlu pilih manual
-    fetchHistory(date: _selectedDate);
+    // Otomatis langsung memuat data deteksi foto HARI INI
+    fetchTodayHistory();
   }
 
   String _formatIsoDate(DateTime dt) {
@@ -33,32 +30,23 @@ class _HistoryPageState extends State<HistoryPage> {
     return '$y-$m-$d';
   }
 
-  String _formatIndonesianDate(DateTime dt) {
+  String _formatIndonesianToday() {
+    final now = DateTime.now();
     const days = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
     const months = [
       '', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
       'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
     ];
-    final dayName = days[dt.weekday - 1];
-    final monthName = months[dt.month];
-    return '$dayName, ${dt.day} $monthName ${dt.year}';
+    final dayName = days[now.weekday - 1];
+    final monthName = months[now.month];
+    return '$dayName, ${now.day} $monthName ${now.year}';
   }
 
-  bool _isToday(DateTime dt) {
-    final now = DateTime.now();
-    return dt.year == now.year && dt.month == now.month && dt.day == now.day;
-  }
-
-  Future<void> fetchHistory({DateTime? date, int? year}) async {
+  Future<void> fetchTodayHistory() async {
     setState(() => isLoading = true);
 
-    String urlString;
-    if (year != null) {
-      urlString = ApiConfig.yearlySummaryUrl(year);
-    } else {
-      final targetDate = date ?? _selectedDate;
-      urlString = ApiConfig.dailySummaryUrl(_formatIsoDate(targetDate));
-    }
+    final todayIso = _formatIsoDate(DateTime.now());
+    final urlString = ApiConfig.dailySummaryUrl(todayIso);
 
     try {
       final response = await http.get(Uri.parse(urlString));
@@ -83,39 +71,6 @@ class _HistoryPageState extends State<HistoryPage> {
     }
   }
 
-  Future<void> _openCalendarPicker() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2035),
-      helpText: 'PILIH TANGGAL RIWAYAT FOTO',
-      cancelText: 'BATAL',
-      confirmText: 'PILIH TANGGAL',
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: Color(0xFF3D5AFE),
-              onPrimary: Colors.white,
-              onSurface: Color(0xFF263238),
-            ),
-            dialogBackgroundColor: Colors.white,
-          ),
-          child: child!,
-        );
-      },
-    );
-
-    if (picked != null) {
-      setState(() {
-        _selectedDate = picked;
-        _isYearMode = false;
-      });
-      fetchHistory(date: picked);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -126,11 +81,11 @@ class _HistoryPageState extends State<HistoryPage> {
           children: [
             Text(
               "Riwayat Deteksi Foto",
-              style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             Text(
-              "Khusus input Gambar / Foto",
-              style: TextStyle(fontSize: 12, color: Colors.white70),
+              "Data Hari Ini (Reset Otomatis Tiap 2 Hari)",
+              style: TextStyle(fontSize: 11.5, color: Colors.white70),
             ),
           ],
         ),
@@ -149,20 +104,14 @@ class _HistoryPageState extends State<HistoryPage> {
           IconButton(
             tooltip: "Muat Ulang",
             icon: const Icon(Icons.refresh),
-            onPressed: () {
-              if (_isYearMode) {
-                fetchHistory(year: _selectedYear);
-              } else {
-                fetchHistory(date: _selectedDate);
-              }
-            },
+            onPressed: fetchTodayHistory,
           ),
         ],
       ),
       body: Column(
         children: [
           _buildInfoBanner(),
-          _buildCalendarHeader(),
+          _buildTodayHeader(),
           Expanded(
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 250),
@@ -191,7 +140,7 @@ class _HistoryPageState extends State<HistoryPage> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              "Riwayat ini hanya mencatat hasil deteksi dari Foto (Ambil Foto & Galeri). Deteksi Live Camera tidak disimpan.",
+              "Riwayat ini khusus mencatat hasil foto (Ambil Foto & Galeri). Live Camera bersifat real-time dan tidak disimpan.",
               style: TextStyle(
                 fontSize: 11.5,
                 color: Colors.blueGrey[900],
@@ -205,10 +154,8 @@ class _HistoryPageState extends State<HistoryPage> {
     );
   }
 
-  /// Header kalender interaktif tanpa input keyboard
-  Widget _buildCalendarHeader() {
-    final bool isSelectedToday = _isToday(_selectedDate) && !_isYearMode;
-
+  /// Header tanggal hari ini (bersih tanpa tombol filter manual)
+  Widget _buildTodayHeader() {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
       decoration: const BoxDecoration(
@@ -229,208 +176,79 @@ class _HistoryPageState extends State<HistoryPage> {
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Card Pemilih Kalender (Klik untuk memunculkan kalender datepicker)
-          InkWell(
-            onTap: _openCalendarPicker,
-            borderRadius: BorderRadius.circular(16),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Colors.black12,
-                    blurRadius: 6,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF3D5AFE).withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.calendar_month_rounded,
-                      color: Color(0xFF3D5AFE),
-                      size: 26,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Text(
-                              _isYearMode
-                                  ? "FILTER TAHUNAN"
-                                  : (isSelectedToday ? "HARI INI (DEFAULT)" : "TANGGAL TERPILIH"),
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: isSelectedToday ? Colors.green[700] : Colors.grey[600],
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                            if (isSelectedToday) ...[
-                              const SizedBox(width: 6),
-                              Container(
-                                width: 7,
-                                height: 7,
-                                decoration: const BoxDecoration(
-                                  color: Colors.green,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          _isYearMode
-                              ? "Tahun $_selectedYear"
-                              : _formatIndonesianDate(_selectedDate),
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF1E293B),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          "Pilih",
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF3D5AFE),
-                          ),
-                        ),
-                        SizedBox(width: 2),
-                        Icon(Icons.keyboard_arrow_down, size: 16, color: Color(0xFF3D5AFE)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          // Filter Chips Cepat (Tinggal klik langsung ganti tanpa keyboard)
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _buildQuickChip(
-                  label: "Hari Ini",
-                  icon: Icons.today_rounded,
-                  isActive: isSelectedToday,
-                  onTap: () {
-                    final now = DateTime.now();
-                    setState(() {
-                      _selectedDate = now;
-                      _isYearMode = false;
-                    });
-                    fetchHistory(date: now);
-                  },
-                ),
-                const SizedBox(width: 8),
-                _buildQuickChip(
-                  label: "Kemarin",
-                  icon: Icons.history_rounded,
-                  isActive: !_isYearMode &&
-                      _selectedDate.day == DateTime.now().subtract(const Duration(days: 1)).day &&
-                      _selectedDate.month == DateTime.now().month &&
-                      _selectedDate.year == DateTime.now().year,
-                  onTap: () {
-                    final yesterday = DateTime.now().subtract(const Duration(days: 1));
-                    setState(() {
-                      _selectedDate = yesterday;
-                      _isYearMode = false;
-                    });
-                    fetchHistory(date: yesterday);
-                  },
-                ),
-                const SizedBox(width: 8),
-                _buildQuickChip(
-                  label: "Buka Kalender",
-                  icon: Icons.edit_calendar_rounded,
-                  isActive: false,
-                  onTap: _openCalendarPicker,
-                ),
-                const SizedBox(width: 8),
-                _buildQuickChip(
-                  label: "Semua Tahun $_selectedYear",
-                  icon: Icons.calendar_view_month_rounded,
-                  isActive: _isYearMode,
-                  onTap: () {
-                    setState(() {
-                      _isYearMode = true;
-                    });
-                    fetchHistory(year: _selectedYear);
-                  },
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQuickChip({
-    required String label,
-    required IconData icon,
-    required bool isActive,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: isActive ? Colors.white : Colors.white.withOpacity(0.2),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isActive ? Colors.white : Colors.white.withOpacity(0.3),
-          ),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: const [
+            BoxShadow(
+              color: Colors.black12,
+              blurRadius: 6,
+              offset: Offset(0, 2),
+            ),
+          ],
         ),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 14,
-              color: isActive ? const Color(0xFF3D5AFE) : Colors.white,
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF10B981).withOpacity(0.12),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(
+                Icons.today_rounded,
+                color: Color(0xFF10B981),
+                size: 28,
+              ),
             ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
-                color: isActive ? const Color(0xFF3D5AFE) : Colors.white,
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF10B981),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Text(
+                        "DATA HARI INI",
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF10B981),
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    _formatIndonesianToday(),
+                    style: const TextStyle(
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1E293B),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    "Otomatis dibersihkan berkala tiap 2 hari",
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey[600],
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -447,7 +265,7 @@ class _HistoryPageState extends State<HistoryPage> {
           children: [
             CircularProgressIndicator(color: Color(0xFF3D5AFE)),
             SizedBox(height: 12),
-            Text("Memuat data riwayat foto...", style: TextStyle(color: Colors.grey)),
+            Text("Memuat data deteksi hari ini...", style: TextStyle(color: Colors.grey)),
           ],
         ),
       );
@@ -463,7 +281,7 @@ class _HistoryPageState extends State<HistoryPage> {
     if (summary!['success'] != true) {
       return _buildEmptyState(
         title: "Riwayat Tidak Ditemukan",
-        message: "Data riwayat deteksi foto tidak tersedia untuk periode ini.",
+        message: "Data riwayat deteksi foto tidak tersedia saat ini.",
       );
     }
 
@@ -473,35 +291,26 @@ class _HistoryPageState extends State<HistoryPage> {
 
     if (totalSessions == 0 && totalMangoes == 0) {
       return _buildEmptyState(
-        title: "Belum Ada Riwayat Deteksi",
-        message: _isYearMode
-            ? "Belum ada sesi foto mangga yang tersimpan di tahun $_selectedYear."
-            : "Belum ada sesi foto mangga yang tersimpan pada ${_formatIndonesianDate(_selectedDate)}.",
+        title: "Belum Ada Deteksi Hari Ini",
+        message: "Silakan ambil foto atau unggah gambar mangga untuk melihat hasil analisis hari ini.",
       );
     }
 
     return RefreshIndicator(
       color: const Color(0xFF3D5AFE),
-      onRefresh: () async {
-        if (_isYearMode) {
-          await fetchHistory(year: _selectedYear);
-        } else {
-          await fetchHistory(date: _selectedDate);
-        }
-      },
+      onRefresh: fetchTodayHistory,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         children: [
           _buildSummaryCard(data),
           if (data.containsKey('ripeness_distribution') && (data['ripeness_distribution'] as Map).isNotEmpty)
-            _buildDistributionCard("Distribusi Kematangan", data['ripeness_distribution'], totalMangoes),
+            _buildDistributionCard("Distribusi Kematangan Hari Ini", data['ripeness_distribution'], totalMangoes),
           if (data.containsKey('grade_distribution') && (data['grade_distribution'] as Map).isNotEmpty)
-            _buildDistributionCard("Distribusi Grade Mutu", data['grade_distribution'], totalMangoes),
+            _buildDistributionCard("Distribusi Grade Mutu Hari Ini", data['grade_distribution'], totalMangoes),
           if (data.containsKey('breakdown') && (data['breakdown'] as List).isNotEmpty)
             _buildBreakdownCard(
-              title: data['breakdown_title'] ?? "Rincian Waktu Deteksi",
+              title: data['breakdown_title'] ?? "Rincian Jam Deteksi Hari Ini",
               items: data['breakdown'] as List,
-              isYearly: _isYearMode,
             ),
         ],
       ),
@@ -530,7 +339,7 @@ class _HistoryPageState extends State<HistoryPage> {
                 ],
               ),
               child: const Icon(
-                Icons.calendar_today_outlined,
+                Icons.eco_outlined,
                 size: 64,
                 color: Color(0xFF94A3B8),
               ),
@@ -553,16 +362,9 @@ class _HistoryPageState extends State<HistoryPage> {
             ),
             const SizedBox(height: 20),
             ElevatedButton.icon(
-              onPressed: () {
-                final now = DateTime.now();
-                setState(() {
-                  _selectedDate = now;
-                  _isYearMode = false;
-                });
-                fetchHistory(date: now);
-              },
-              icon: const Icon(Icons.today),
-              label: const Text("Tampilkan Hari Ini"),
+              onPressed: fetchTodayHistory,
+              icon: const Icon(Icons.refresh),
+              label: const Text("Muat Ulang"),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF3D5AFE),
                 foregroundColor: Colors.white,
@@ -734,7 +536,6 @@ class _HistoryPageState extends State<HistoryPage> {
   Widget _buildBreakdownCard({
     required String title,
     required List<dynamic> items,
-    required bool isYearly,
   }) {
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -765,7 +566,7 @@ class _HistoryPageState extends State<HistoryPage> {
             ),
             const SizedBox(height: 10),
             ...items.map<Widget>((entry) {
-              final label = isYearly ? (entry['label'] ?? 'Bulan ${entry['month']}') : (entry['time_label'] ?? 'Jam ${entry['hour']}:00');
+              final label = entry['time_label'] ?? 'Jam ${entry['hour']}:00';
               final totalMangoes = entry['total_mangoes'] ?? 0;
               final totalSessions = entry['total_sessions'] ?? 0;
 
@@ -785,10 +586,10 @@ class _HistoryPageState extends State<HistoryPage> {
                         color: const Color(0xFF3D5AFE).withOpacity(0.1),
                         shape: BoxShape.circle,
                       ),
-                      child: Icon(
-                        isYearly ? Icons.calendar_today : Icons.access_time_rounded,
+                      child: const Icon(
+                        Icons.access_time_rounded,
                         size: 16,
-                        color: const Color(0xFF3D5AFE),
+                        color: Color(0xFF3D5AFE),
                       ),
                     ),
                     const SizedBox(width: 12),
