@@ -340,12 +340,92 @@ def predict_compare():
         cleanup_file(image_path)
         return jsonify({'error': f'Comparison failed: {str(e)}'}), 500
     
+@app.route('/summary', methods=['GET'])
 @app.route('/yearly-summary', methods=['GET'])
 def yearly_summary():
     """
-    Endpoint untuk mendapatkan ringkasan tahunan
+    Endpoint untuk mendapatkan ringkasan riwayat deteksi.
+    Mendukung filter harian (?date=YYYY-MM-DD) maupun tahunan (?year=YYYY).
     """
     try:
+        date_str = request.args.get('date')
+        if date_str:
+            try:
+                target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            except ValueError:
+                return jsonify({'error': 'Format tanggal salah, gunakan YYYY-MM-DD'}), 400
+
+            start_date = datetime.combine(target_date, datetime.min.time())
+            end_date = datetime.combine(target_date, datetime.max.time())
+
+            # Query data harian
+            sessions = History.query.filter(
+                History.detected_at >= start_date,
+                History.detected_at <= end_date
+            ).all()
+
+            total_sessions = len(sessions)
+            total_mangoes = sum((s.total_mangoes or 0) for s in sessions)
+
+            # Query distribusi grade
+            grade_stats = db.session.query(
+                Detection.grade,
+                func.count(Detection.id).label('count')
+            ).join(History, Detection.history_id == History.id).filter(
+                History.detected_at >= start_date,
+                History.detected_at <= end_date
+            ).group_by(Detection.grade).all()
+
+            # Query distribusi kematangan
+            ripeness_stats = db.session.query(
+                Detection.ripeness_level,
+                func.count(Detection.id).label('count')
+            ).join(History, Detection.history_id == History.id).filter(
+                History.detected_at >= start_date,
+                History.detected_at <= end_date
+            ).group_by(Detection.ripeness_level).all()
+
+            # Query per jam untuk hari tersebut
+            hourly_stats = db.session.query(
+                extract('hour', History.detected_at).label('hour'),
+                func.count(History.id).label('total_sessions'),
+                func.sum(History.total_mangoes).label('total_mangoes')
+            ).filter(
+                History.detected_at >= start_date,
+                History.detected_at <= end_date
+            ).group_by(extract('hour', History.detected_at)).all()
+
+            hourly_data = []
+            for hour, s_cnt, m_cnt in hourly_stats:
+                h_int = int(hour)
+                hourly_data.append({
+                    'hour': h_int,
+                    'time_label': f"{h_int:02d}:00 - {h_int+1:02d}:00",
+                    'total_sessions': s_cnt or 0,
+                    'total_mangoes': m_cnt or 0
+                })
+            hourly_data.sort(key=lambda x: x['hour'])
+
+            month_names = [
+                '', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+                'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+            ]
+            formatted_date_id = f"{target_date.day} {month_names[target_date.month]} {target_date.year}"
+
+            return jsonify({
+                'success': True,
+                'filter_type': 'daily',
+                'date': date_str,
+                'date_formatted': formatted_date_id,
+                'total_sessions': total_sessions,
+                'total_mangoes': total_mangoes,
+                'grade_distribution': {grade: count for grade, count in grade_stats if grade},
+                'ripeness_distribution': {ripeness: count for ripeness, count in ripeness_stats if ripeness},
+                'breakdown': hourly_data,
+                'breakdown_title': 'Rangkuman Jam Deteksi Hari Ini'
+            })
+
+        # Jika tidak menyertakan date, gunakan filter tahunan (default: tahun berjalan)
         year = request.args.get('year', type=int, default=datetime.now().year)
         
         # Query untuk mendapatkan data tahunan
@@ -383,7 +463,7 @@ def yearly_summary():
         for month, sessions, mangoes in monthly_stats:
             monthly_data.append({
                 'month': int(month),
-                'month_name': month_names[int(month)],
+                'label': month_names[int(month)],
                 'total_sessions': sessions or 0,
                 'total_mangoes': mangoes or 0
             })
@@ -393,16 +473,19 @@ def yearly_summary():
         
         return jsonify({
             'success': True,
+            'filter_type': 'yearly',
             'year': year,
             'monthly_breakdown': monthly_data,
-            'grade_distribution': {grade: count for grade, count in grade_stats},
-            'ripeness_distribution': {ripeness: count for ripeness, count in ripeness_stats},
+            'breakdown': monthly_data,
+            'breakdown_title': 'Rangkuman Bulanan',
+            'grade_distribution': {grade: count for grade, count in grade_stats if grade},
+            'ripeness_distribution': {ripeness: count for ripeness, count in ripeness_stats if ripeness},
             'total_sessions': sum(item['total_sessions'] for item in monthly_data),
             'total_mangoes': sum(item['total_mangoes'] for item in monthly_data)
         })
         
     except Exception as e:
-        return jsonify({'error': f'Failed to generate yearly summary: {str(e)}'}), 500
+        return jsonify({'error': f'Failed to generate summary: {str(e)}'}), 500
 
 @app.route('/health', methods=['GET'])
 def health_check():

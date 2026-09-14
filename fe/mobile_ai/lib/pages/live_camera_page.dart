@@ -11,6 +11,7 @@ import 'package:http_parser/http_parser.dart';
 import 'package:image/image.dart' as img;
 
 import '../components/box_overlay_painter.dart';
+import '../config/api_config.dart';
 
 class LiveCameraPage extends StatefulWidget {
   const LiveCameraPage({super.key});
@@ -107,7 +108,7 @@ class _LiveCameraPageState extends State<LiveCameraPage> {
 
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse('https://api.newshub.store/predict'),
+        Uri.parse(ApiConfig.predictUrl),
       );
       request.files.add(http.MultipartFile.fromBytes(
         'image',

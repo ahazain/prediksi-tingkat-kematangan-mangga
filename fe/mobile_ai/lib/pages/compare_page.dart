@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import '../components/box_overlay_painter.dart';
 import '../components/detection_cards.dart';
+import '../config/api_config.dart';
 
 class ComparePage extends StatefulWidget {
   final File? imageFile;
@@ -38,7 +39,7 @@ class _ComparePageState extends State<ComparePage> {
     try {
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse('https://api.newshub.store/predict-compare'),
+        Uri.parse(ApiConfig.predictCompareUrl),
       );
 
       if (widget.imageBytes != null) {

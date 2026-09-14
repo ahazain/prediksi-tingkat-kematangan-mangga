@@ -19,6 +19,7 @@ import '../components/detection_cards.dart';
 import 'package:flutter_speed_dial/flutter_speed_dial.dart';
 import 'package:mobile_ai/pages/history_page.dart';
 import 'package:mobile_ai/pages/compare_page.dart';
+import '../config/api_config.dart';
 
 class ImageInputPage extends StatefulWidget {
   const ImageInputPage({super.key});
@@ -93,7 +94,7 @@ class _ImageInputPageState extends State<ImageInputPage> {
     try {
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse('https://api.newshub.store/predict'),
+        Uri.parse(ApiConfig.predictUrl),
       );
 
       if (kIsWeb) {
@@ -380,7 +381,7 @@ class _ImageInputPageState extends State<ImageInputPage> {
           ),
           // KODE BARU (BENAR)
           SpeedDialChild(
-            label: 'Riwayat',
+            label: 'Riwayat Foto',
             labelStyle: const TextStyle(fontWeight: FontWeight.bold),
             backgroundColor: Colors.transparent,
             elevation: 0,
