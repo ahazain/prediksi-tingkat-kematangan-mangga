@@ -1,13 +1,9 @@
 class ApiConfig {
-  // IP Wi-Fi Laptop (HP dan Laptop berada di jaringan Wi-Fi yang sama)
-  // Tidak perlu kabel USB atau command adb lagi, selama backend running akan langsung terhubung.
-  static const String baseUrl = 'http://192.168.1.55:5000';
+  // URL Backend Production di Render.com (Online 24/7 di Cloud Singapore)
+  static const String baseUrl = 'https://deteksi-mangga-api.onrender.com';
 
-  // Opsi cadangan jika menggunakan kabel USB dengan adb reverse:
-  // static const String baseUrl = 'http://127.0.0.1:5000';
-
-  // OPSI 3: Endpoint production jika sudah di-deploy ke server online
-  // static const String baseUrl = 'https://api.newshub.store';
+  // Opsi cadangan lokal jika ingin testing offline di rumah:
+  // static const String baseUrl = 'http://192.168.1.55:5000';
 
   static String get predictUrl => '$baseUrl/predict';
   static String get predictCompareUrl => '$baseUrl/predict-compare';

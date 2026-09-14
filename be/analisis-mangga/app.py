@@ -1,6 +1,9 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
+# Matikan autoinstall background pip oleh Ultralytics agar tidak menghambat startup
+os.environ["YOLO_AUTOINSTALL"] = "False"
+
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from config import Config
@@ -258,6 +261,20 @@ try:
     model = load_model()
 except Exception as e:
     model = None
+
+@app.route('/', methods=['GET'])
+def root():
+    return jsonify({
+        "status": "online",
+        "message": "Deteksi Kematangan Mangga API is running"
+    }), 200
+
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({
+        "status": "healthy",
+        "model_loaded": model is not None
+    }), 200
 
 @app.route('/predict', methods=['POST'])
 def predict():
