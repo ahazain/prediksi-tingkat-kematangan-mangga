@@ -38,9 +38,12 @@ def cleanup_old_history(days=2):
     with app.app_context():
         try:
             cutoff = datetime.utcnow() - timedelta(days=days)
-            deleted = History.query.filter(History.detected_at < cutoff).delete()
-            db.session.commit()
-            if deleted:
+            old_histories = History.query.filter(History.detected_at < cutoff).all()
+            if old_histories:
+                old_ids = [h.id for h in old_histories]
+                Detection.query.filter(Detection.history_id.in_(old_ids)).delete(synchronize_session=False)
+                deleted = History.query.filter(History.id.in_(old_ids)).delete(synchronize_session=False)
+                db.session.commit()
                 print(f"[AUTO-CLEANUP] Berhasil membersihkan {deleted} riwayat yang lebih dari {days} hari.")
         except Exception as e:
             db.session.rollback()
