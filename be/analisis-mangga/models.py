@@ -10,6 +10,13 @@ class History(db.Model):
     total_mangoes = db.Column(db.Integer)
     detections = db.relationship('Detection', backref='history', cascade="all, delete-orphan")
 
+    def __init__(self, detected_at=None, total_mangoes=None, **kwargs):
+        super().__init__(**kwargs)
+        if detected_at is not None:
+            self.detected_at = detected_at
+        if total_mangoes is not None:
+            self.total_mangoes = total_mangoes
+
 class Detection(db.Model):
     __tablename__ = 'detections'
     id = db.Column(db.Integer, primary_key=True)
@@ -22,3 +29,23 @@ class Detection(db.Model):
     bbox_xmax = db.Column(db.Integer)  # dari xmax  
     bbox_ymin = db.Column(db.Integer)  # dari ymin
     bbox_ymax = db.Column(db.Integer)  # dari ymax
+
+    def __init__(self, history_id=None, confidence=None, grade=None, ripeness_level=None,
+                 bbox_xmin=None, bbox_xmax=None, bbox_ymin=None, bbox_ymax=None, **kwargs):
+        super().__init__(**kwargs)
+        if history_id is not None:
+            self.history_id = history_id
+        if confidence is not None:
+            self.confidence = confidence
+        if grade is not None:
+            self.grade = grade
+        if ripeness_level is not None:
+            self.ripeness_level = ripeness_level
+        if bbox_xmin is not None:
+            self.bbox_xmin = bbox_xmin
+        if bbox_xmax is not None:
+            self.bbox_xmax = bbox_xmax
+        if bbox_ymin is not None:
+            self.bbox_ymin = bbox_ymin
+        if bbox_ymax is not None:
+            self.bbox_ymax = bbox_ymax
