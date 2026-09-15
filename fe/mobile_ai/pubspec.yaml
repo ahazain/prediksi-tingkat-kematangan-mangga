@@ -61,6 +61,7 @@ dev_dependencies:
 flutter:
   assets:
     - assets/mango.png
+    - assets/mango_icon.png
   fonts:
       - family: Chillax
         fonts:
