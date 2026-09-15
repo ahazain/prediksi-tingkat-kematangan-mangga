@@ -47,6 +47,125 @@ class _ImageInputPageState extends State<ImageInputPage> {
     super.dispose();
   }
 
+  void _showServerDialog() {
+    final controller = TextEditingController(text: ApiConfig.baseUrl);
+    String statusMessage = "";
+    bool isTesting = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Icon(Icons.dns_rounded, color: Color(0xFF2979FF)),
+              SizedBox(width: 8),
+              Text("Server Backend", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                "Masukkan URL/IP Backend Flask (contoh: http://192.168.110.60:5000):",
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                decoration: InputDecoration(
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  labelText: "Base URL",
+                  prefixIcon: const Icon(Icons.link),
+                ),
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFE3F2FD),
+                  foregroundColor: const Color(0xFF1976D2),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: isTesting
+                    ? null
+                    : () async {
+                        setDialogState(() {
+                          isTesting = true;
+                          statusMessage = "Menghubungi server...";
+                        });
+                        try {
+                          final cleanUrl = controller.text.trim().replaceAll(RegExp(r'/+$'), '');
+                          final res = await http.get(Uri.parse('$cleanUrl/health')).timeout(const Duration(seconds: 4));
+                          if (res.statusCode == 200) {
+                            setDialogState(() {
+                              isTesting = false;
+                              statusMessage = "✅ Terhubung! Server & YOLO Aktif.";
+                            });
+                          } else {
+                            setDialogState(() {
+                              isTesting = false;
+                              statusMessage = "⚠️ Server merespon kode ${res.statusCode}";
+                            });
+                          }
+                        } catch (err) {
+                          setDialogState(() {
+                            isTesting = false;
+                            statusMessage = "❌ Gagal: HP & Laptop harus 1 Wi-Fi";
+                          });
+                        }
+                      },
+                icon: isTesting
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.wifi_find_rounded),
+                label: const Text("Tes Koneksi"),
+              ),
+              if (statusMessage.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  statusMessage,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: statusMessage.startsWith("✅") ? Colors.green : Colors.red,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("Batal"),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2979FF),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: () {
+                final newUrl = controller.text.trim().replaceAll(RegExp(r'/+$'), '');
+                if (newUrl.isNotEmpty) {
+                  setState(() {
+                    ApiConfig.baseUrl = newUrl;
+                  });
+                }
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text("URL backend disimpan: ${ApiConfig.baseUrl}")),
+                );
+              },
+              child: const Text("Simpan"),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _pickImage(ImageSource source) async {
     _dialNotifier.value = false; // Tutup SpeedDial
     try {
@@ -132,7 +251,15 @@ class _ImageInputPageState extends State<ImageInputPage> {
     } catch (e) {
       debugPrint("Error saat kirim gambar: $e");
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Terjadi kesalahan saat memproses gambar")),
+        SnackBar(
+          content: Text("Gagal terhubung ke ${ApiConfig.baseUrl}: $e"),
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: "Ganti IP",
+            textColor: Colors.yellow,
+            onPressed: _showServerDialog,
+          ),
+        ),
       );
     }
   }
@@ -222,6 +349,13 @@ class _ImageInputPageState extends State<ImageInputPage> {
             ),
             centerTitle: true,
             iconTheme: const IconThemeData(color: Colors.white),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.settings_ethernet_rounded),
+                tooltip: "Pengaturan Server",
+                onPressed: _showServerDialog,
+              ),
+            ],
           ),
         ),
       ),

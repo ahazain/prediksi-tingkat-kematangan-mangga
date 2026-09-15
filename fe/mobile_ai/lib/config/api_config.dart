@@ -1,9 +1,9 @@
 class ApiConfig {
-  // URL Backend Production di Render.com (Online 24/7 di Cloud Singapore)
-  static const String baseUrl = 'https://deteksi-mangga-api.onrender.com';
+  // Default ke IP Wi-Fi laptop lokal saat ini
+  static String baseUrl = 'http://192.168.110.60:5000';
 
-  // Opsi cadangan lokal jika ingin testing offline di rumah:
-  // static const String baseUrl = 'http://192.168.1.55:5000';
+  // Opsi Render Cloud (jika diaktifkan):
+  // static String baseUrl = 'https://deteksi-mangga-api.onrender.com';
 
   static String get predictUrl => '$baseUrl/predict';
   static String get predictCompareUrl => '$baseUrl/predict-compare';
