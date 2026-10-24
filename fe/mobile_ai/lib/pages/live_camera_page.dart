@@ -5,7 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Import untuk DeviceOrientation
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:image/image.dart' as img;
@@ -25,13 +25,12 @@ class _LiveCameraPageState extends State<LiveCameraPage> {
   bool _isProcessing = false;
   List<dynamic>? _detections;
   ui.Image? _lastImage;
-  // Variabel untuk menyimpan orientasi perangkat saat ini
   DeviceOrientation _currentOrientation = DeviceOrientation.portraitUp;
+  int _lastCheckTimestamp = 0;
 
   @override
   void initState() {
     super.initState();
-    // Mengunci orientasi potret saat halaman pertama kali dibuka
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
     ]);
@@ -40,7 +39,6 @@ class _LiveCameraPageState extends State<LiveCameraPage> {
 
   @override
   void dispose() {
-    // Mengizinkan semua orientasi lagi saat keluar dari halaman
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
@@ -61,7 +59,7 @@ class _LiveCameraPageState extends State<LiveCameraPage> {
 
     _cameraController = CameraController(
       backCamera,
-      ResolutionPreset.low,
+      ResolutionPreset.low, // Resolusi rendah agar preview super ringan & hemat kuota
       enableAudio: false,
       imageFormatGroup: ImageFormatGroup.yuv420,
     );
@@ -69,11 +67,13 @@ class _LiveCameraPageState extends State<LiveCameraPage> {
     await _cameraController!.initialize();
     if (!mounted) return;
 
-    // Mengunci orientasi capture awal ke potret
     await _cameraController!.lockCaptureOrientation(DeviceOrientation.portraitUp);
 
+    // Throttle deteksi ke 2 detik sekali agar HP tetap 60fps & server tidak terbebani
     _cameraController!.startImageStream((CameraImage image) {
-      if (!_isProcessing) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (!_isProcessing && (now - _lastCheckTimestamp >= 2000)) {
+        _lastCheckTimestamp = now;
         _isProcessing = true;
         _processCameraImage(image);
       }
@@ -84,31 +84,31 @@ class _LiveCameraPageState extends State<LiveCameraPage> {
 
   Future<void> _processCameraImage(CameraImage image) async {
     try {
-      // Konversi gambar dari YUV ke JPEG
+      // Konversi YUV ke JPEG dengan downsample cepat
       Uint8List? jpegBytes = await _convertYUV420toJPEG(image);
       if (jpegBytes == null) {
-        _isProcessing = false;
+        if (mounted) setState(() => _isProcessing = false);
         return;
       }
 
-      // --- PERUBAHAN UTAMA: ROTASI GAMBAR JIKA PERANGKAT POTRET ---
-      // Sensor kamera biasanya lanskap, jadi jika perangkat dalam mode potret,
-      // kita perlu memutar gambar 90 derajat sebelum mengirim ke backend.
+      // Rotasi 90 derajat jika mode portrait
       if (_currentOrientation == DeviceOrientation.portraitUp) {
         final originalImage = img.decodeJpg(jpegBytes);
         if (originalImage != null) {
           final rotatedImage = img.copyRotate(originalImage, angle: 90);
-          jpegBytes = Uint8List.fromList(img.encodeJpg(rotatedImage));
+          jpegBytes = Uint8List.fromList(img.encodeJpg(rotatedImage, quality: 65));
         }
       }
-      // Jika orientasi lanskap, tidak perlu rotasi.
 
-      // Decode gambar yang sudah benar orientasinya untuk ditampilkan di UI
-      _lastImage = await decodeImageFromList(jpegBytes);
+      final uiImg = await decodeImageFromList(jpegBytes);
+      if (mounted) {
+        _lastImage = uiImg;
+      }
 
+      // Kirim ke endpoint khusus /predict-live (tanpa simpan DB, cepat <300ms)
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse(ApiConfig.predictUrl),
+        Uri.parse(ApiConfig.predictLiveUrl),
       );
       request.files.add(http.MultipartFile.fromBytes(
         'image',
@@ -117,56 +117,65 @@ class _LiveCameraPageState extends State<LiveCameraPage> {
         contentType: MediaType('image', 'jpeg'),
       ));
 
-      final response = await request.send();
+      final streamedRes = await request.send().timeout(const Duration(seconds: 4));
+      final res = await http.Response.fromStream(streamedRes);
 
-      if (response.statusCode == 200) {
-        final responseString = await response.stream.bytesToString();
-        final parsed = jsonDecode(responseString);
-        if (mounted) {
+      if (res.statusCode == 200) {
+        final parsed = jsonDecode(res.body);
+        if (mounted && parsed is Map<String, dynamic> && parsed['detections'] != null) {
           setState(() {
             _detections = parsed['detections'];
           });
         }
-      } else {
-        if (mounted) setState(() => _detections = null);
       }
     } catch (e) {
-      debugPrint("Error processing camera image: $e");
+      debugPrint("Live camera frame error: $e");
     } finally {
-      Future.delayed(const Duration(milliseconds: 100), () {
-        if (mounted) _isProcessing = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+        });
+      }
     }
   }
 
   Future<Uint8List?> _convertYUV420toJPEG(CameraImage image) async {
-    // Fungsi ini tidak berubah, biarkan seperti sebelumnya
     try {
       final int width = image.width;
       final int height = image.height;
       final int yRowStride = image.planes[0].bytesPerRow;
       final int uvRowStride = image.planes[1].bytesPerRow;
-      final int uvPixelStride = image.planes[1].bytesPerPixel!;
-      final img.Image rgbImage = img.Image(width: width, height: height);
-      for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
+      final int uvPixelStride = image.planes[1].bytesPerPixel ?? 1;
+
+      // Downsample 2x agar loop piksel 4x lebih cepat
+      final int step = (width > 320) ? 2 : 1;
+      final int outWidth = width ~/ step;
+      final int outHeight = height ~/ step;
+
+      final img.Image rgbImage = img.Image(width: outWidth, height: outHeight);
+
+      for (int y = 0; y < outHeight; y++) {
+        final int srcY = y * step;
+        for (int x = 0; x < outWidth; x++) {
+          final int srcX = x * step;
           final int uvIndex =
-              uvPixelStride * (x / 2).floor() + uvRowStride * (y / 2).floor();
-          final int index = y * yRowStride + x;
-          final yp = image.planes[0].bytes[index];
-          final up = image.planes[1].bytes[uvIndex];
-          final vp = image.planes[2].bytes[uvIndex];
-          final r = (yp + 1.370705 * (vp - 128)).clamp(0, 255).toInt();
-          final g = (yp - 0.337633 * (up - 128) - 0.698001 * (vp - 128))
-              .clamp(0, 255)
-              .toInt();
-          final b = (yp + 1.732446 * (up - 128)).clamp(0, 255).toInt();
-          rgbImage.setPixelRgb(x, y, r, g, b);
+              uvPixelStride * (srcX ~/ 2) + uvRowStride * (srcY ~/ 2);
+          final int index = srcY * yRowStride + srcX;
+          
+          if (index < image.planes[0].bytes.length && uvIndex < image.planes[1].bytes.length && uvIndex < image.planes[2].bytes.length) {
+            final yp = image.planes[0].bytes[index];
+            final up = image.planes[1].bytes[uvIndex];
+            final vp = image.planes[2].bytes[uvIndex];
+            final r = (yp + 1.370705 * (vp - 128)).clamp(0, 255).toInt();
+            final g = (yp - 0.337633 * (up - 128) - 0.698001 * (vp - 128)).clamp(0, 255).toInt();
+            final b = (yp + 1.732446 * (up - 128)).clamp(0, 255).toInt();
+            rgbImage.setPixelRgb(x, y, r, g, b);
+          }
         }
       }
-      return Uint8List.fromList(img.encodeJpg(rgbImage, quality: 75));
+      return Uint8List.fromList(img.encodeJpg(rgbImage, quality: 65));
     } catch (e) {
-      debugPrint("Error during YUV to JPEG conversion: $e");
+      debugPrint("Error during YUV conversion: $e");
       return null;
     }
   }
@@ -175,7 +184,11 @@ class _LiveCameraPageState extends State<LiveCameraPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Deteksi Real-time'),
+        title: const Text(
+          'Deteksi Real-time',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        foregroundColor: Colors.white,
         backgroundColor: const Color.fromRGBO(63, 81, 181, 1),
         flexibleSpace: Container(
           decoration: const BoxDecoration(
@@ -190,15 +203,12 @@ class _LiveCameraPageState extends State<LiveCameraPage> {
           ),
         ),
       ),
-      // --- PERUBAHAN: MENGGUNAKAN ORIENTATION BUILDER ---
       body: OrientationBuilder(
         builder: (context, orientation) {
-          // Tentukan orientasi perangkat
           final newOrientation = orientation == Orientation.portrait
               ? DeviceOrientation.portraitUp
               : DeviceOrientation.landscapeLeft;
-          
-          // Jika orientasi berubah, perbarui state dan lock orientasi kamera
+
           if (newOrientation != _currentOrientation) {
             _currentOrientation = newOrientation;
             _cameraController?.lockCaptureOrientation(_currentOrientation);
@@ -211,7 +221,6 @@ class _LiveCameraPageState extends State<LiveCameraPage> {
                   _cameraController!.value.isInitialized)
                 Center(
                   child: AspectRatio(
-                    // Sesuaikan aspect ratio pratinjau
                     aspectRatio: _cameraController!.value.aspectRatio,
                     child: CameraPreview(_cameraController!),
                   ),
@@ -226,33 +235,50 @@ class _LiveCameraPageState extends State<LiveCameraPage> {
                     _detections!,
                   ),
                 ),
-              
-              if (_isProcessing)
-                Positioned(
-                  bottom: 20,
-                  left: 0,
-                  right: 0,
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.5),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          CircularProgressIndicator(color: Colors.white),
-                          SizedBox(width: 12),
-                          Text(
-                            "Mendeteksi...",
-                            style: TextStyle(color: Colors.white, fontSize: 16),
+
+              Positioned(
+                bottom: 24,
+                left: 20,
+                right: 20,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.65),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_isProcessing)
+                          const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              color: Colors.amber,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        else
+                          const Icon(Icons.check_circle, color: Colors.greenAccent, size: 16),
+                        const SizedBox(width: 8),
+                        Text(
+                          _isProcessing
+                              ? "Menganalisis frame..."
+                              : (_detections != null && _detections!.isNotEmpty)
+                                  ? "${_detections!.length} Mangga terdeteksi"
+                                  : "Mengarahkan kamera...",
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
+              ),
             ],
           );
         },

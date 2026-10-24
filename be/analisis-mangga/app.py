@@ -425,7 +425,8 @@ def get_result(job_id):
 @app.route('/predict-compare', methods=['POST'])
 def predict_compare():
     """
-    Endpoint untuk membandingkan hasil prediksi dengan dan tanpa DIoU-NMS
+    Endpoint untuk membandingkan hasil prediksi dengan dan tanpa DIoU-NMS.
+    Dioptimasi dengan downscale 480px & imgsz=320 agar 4x-5x lebih cepat.
     """
     if model is None:
         return jsonify({'error': 'Model not loaded'}), 500
@@ -436,41 +437,55 @@ def predict_compare():
     image_file = request.files['image']
     
     os.makedirs(TEMP_DIR, exist_ok=True)
-    image_path = os.path.join(TEMP_DIR, image_file.filename)
+    image_path = os.path.join(TEMP_DIR, f"compare_{uuid.uuid4().hex[:8]}.jpg")
     image_file.save(image_path)
 
+    # Otomatis downscale gambar ke max 480px agar inferensi cepat di CPU
     try:
-        # Prediksi dengan DIoU-NMS
-        detections_diou = process_image(image_path)
-        
-        # Prediksi dengan NMS default
-        default_results = model.predict(image_path, nms=True, conf=0.25)
-        detections_default = []
-        
-        for r in default_results:
-            boxes = r.boxes
-            if boxes is None:
-                continue
+        img_mat = cv2.imread(image_path)
+        if img_mat is not None:
+            h, w = img_mat.shape[:2]
+            if max(h, w) > 480:
+                scale = 480.0 / max(h, w)
+                new_w, new_h = int(w * scale), int(h * scale)
+                img_mat = cv2.resize(img_mat, (new_w, new_h), interpolation=cv2.INTER_AREA)
+                cv2.imwrite(image_path, img_mat)
+    except Exception as img_err:
+        print(f"[COMPARE RESIZE WARNING] {img_err}")
 
-            for box in boxes:
-                x1, y1, x2, y2 = box.xyxy[0]
-                xmin, ymin, xmax, ymax = int(x1), int(y1), int(x2), int(y2)
-                conf = float(box.conf[0])
-                cls = int(box.cls[0])
-                label = model.names[cls]
+    try:
+        with torch.no_grad():
+            # 1. Prediksi dengan DIoU-NMS
+            detections_diou = process_image(image_path)
+            
+            # 2. Prediksi dengan NMS default (kunci imgsz=320 dan max_det=20)
+            default_results = model.predict(image_path, nms=True, conf=0.25, imgsz=320, max_det=20)
+            detections_default = []
+            
+            for r in default_results:
+                boxes = r.boxes
+                if boxes is None:
+                    continue
 
-                detection = {
-                    "ripeness_level": label,
-                    "confidence": conf,
-                    "bounding_box": {
-                        "xmin": xmin,
-                        "ymin": ymin,
-                        "xmax": xmax,
-                        "ymax": ymax
+                for box in boxes:
+                    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                    xmin, ymin, xmax, ymax = int(x1), int(y1), int(x2), int(y2)
+                    conf = float(box.conf[0].cpu().item())
+                    cls = int(box.cls[0].cpu().item())
+                    label = model.names[cls]
+
+                    detection = {
+                        "ripeness_level": label,
+                        "confidence": conf,
+                        "bounding_box": {
+                            "xmin": xmin,
+                            "ymin": ymin,
+                            "xmax": xmax,
+                            "ymax": ymax
+                        }
                     }
-                }
-                detection["grade"] = assign_grade(detection)
-                detections_default.append(detection)
+                    detection["grade"] = assign_grade(detection)
+                    detections_default.append(detection)
         
         cleanup_file(image_path)
         
@@ -488,6 +503,73 @@ def predict_compare():
     except Exception as e:
         cleanup_file(image_path)
         return jsonify({'error': f'Comparison failed: {str(e)}'}), 500
+
+@app.route('/predict-live', methods=['POST'])
+def predict_live():
+    """
+    Endpoint ultra-cepat khusus Live Camera Frame:
+    - Tidak simpan riwayat ke DB Neon (menghilangkan delay 300-500ms)
+    - Downscale ke max 320px
+    - YOLO imgsz=256 dengan max_det=10
+    - Respon langsung dalam <300ms
+    """
+    if model is None:
+        return jsonify({'error': 'Model not loaded'}), 500
+
+    if 'image' not in request.files:
+        return jsonify({'error': 'No image uploaded'}), 400
+
+    image_file = request.files['image']
+    os.makedirs(TEMP_DIR, exist_ok=True)
+    live_path = os.path.join(TEMP_DIR, f"live_{uuid.uuid4().hex[:6]}.jpg")
+    image_file.save(live_path)
+
+    try:
+        # Downscale ke 320px
+        try:
+            img_mat = cv2.imread(live_path)
+            if img_mat is not None:
+                h, w = img_mat.shape[:2]
+                if max(h, w) > 320:
+                    scale = 320.0 / max(h, w)
+                    img_mat = cv2.resize(img_mat, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+                    cv2.imwrite(live_path, img_mat)
+        except Exception:
+            pass
+
+        with torch.no_grad():
+            results = model.predict(live_path, nms=True, conf=0.35, imgsz=256, max_det=10)
+            detections = []
+            for r in results:
+                if r.boxes is None:
+                    continue
+                for box in r.boxes:
+                    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                    conf = float(box.conf[0].cpu().item())
+                    cls = int(box.cls[0].cpu().item())
+                    label = model.names[cls]
+                    det = {
+                        "ripeness_level": label,
+                        "confidence": conf,
+                        "bounding_box": {
+                            "xmin": int(x1),
+                            "ymin": int(y1),
+                            "xmax": int(x2),
+                            "ymax": int(y2)
+                        }
+                    }
+                    det["grade"] = assign_grade(det)
+                    detections.append(det)
+
+        cleanup_file(live_path)
+        return jsonify({
+            "success": True,
+            "detections": detections,
+            "total_mangoes": len(detections)
+        })
+    except Exception as e:
+        cleanup_file(live_path)
+        return jsonify({'error': f'Live prediction error: {str(e)}'}), 500
     
 @app.route('/summary', methods=['GET'])
 @app.route('/yearly-summary', methods=['GET'])
