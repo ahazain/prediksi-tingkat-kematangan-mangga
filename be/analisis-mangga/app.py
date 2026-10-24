@@ -19,6 +19,7 @@ torch.set_num_interop_threads(1)
 import numpy as np
 import threading
 import time
+import cv2
 
 app = Flask(__name__)
 CORS(app)
@@ -103,10 +104,10 @@ def diou_nms(boxes, scores, classes, iou_threshold=0.5):
         if len(cls_boxes) == 0:
             continue
             
-        # Sort by confidence dan batasi ke 30 kandidat teratas agar while loop tidak lambat di CPU
+        # Sort by confidence dan batasi ke 20 kandidat teratas agar while loop tidak lambat di CPU
         _, order = cls_scores.sort(0, descending=True)
-        if len(order) > 30:
-            order = order[:30]
+        if len(order) > 20:
+            order = order[:20]
         
         keep_cls = []
         while len(order) > 0:
@@ -201,8 +202,8 @@ def process_image(image_path):
     Args:
         image_path: path to image
     """
-    # Get raw predictions without NMS (imgsz=416 hemat komputasi 50% dibanding default 640)
-    results = model.predict(image_path, nms=False, conf=0.25, imgsz=416)
+    # Get raw predictions without NMS (imgsz=320 hemat komputasi 75% dibanding default 640)
+    results = model.predict(image_path, nms=False, conf=0.30, imgsz=320)
     
     filtered_results = []
     
@@ -292,6 +293,19 @@ def predict():
     os.makedirs(TEMP_DIR, exist_ok=True)
     image_path = os.path.join(TEMP_DIR, image_file.filename)
     image_file.save(image_path)
+
+    # Otomatis downscale gambar ke max 480px agar proses inferensi instan di CPU
+    try:
+        img_mat = cv2.imread(image_path)
+        if img_mat is not None:
+            h, w = img_mat.shape[:2]
+            if max(h, w) > 480:
+                scale = 480.0 / max(h, w)
+                new_w, new_h = int(w * scale), int(h * scale)
+                img_mat = cv2.resize(img_mat, (new_w, new_h), interpolation=cv2.INTER_AREA)
+                cv2.imwrite(image_path, img_mat)
+    except Exception as img_err:
+        print(f"[RESIZE WARNING] {img_err}")
 
     try:
         detections = process_image(image_path)

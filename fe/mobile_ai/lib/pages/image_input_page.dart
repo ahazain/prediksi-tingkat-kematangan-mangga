@@ -173,9 +173,9 @@ class _ImageInputPageState extends State<ImageInputPage> {
       final XFile? pickedFile = await _picker.pickImage(
         source: source,
         preferredCameraDevice: CameraDevice.rear,
-        maxWidth: 1024,
-        maxHeight: 1024,
-        imageQuality: 85,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 70,
       );
 
       if (pickedFile != null) {
@@ -239,7 +239,7 @@ class _ImageInputPageState extends State<ImageInputPage> {
         ));
       }
 
-      final streamedResponse = await request.send().timeout(const Duration(seconds: 90));
+      final streamedResponse = await request.send().timeout(const Duration(seconds: 120));
       final response = await http.Response.fromStream(streamedResponse);
       final responseString = response.body;
       final contentType = response.headers['content-type'] ?? '';
