@@ -425,8 +425,10 @@ def get_result(job_id):
 @app.route('/predict-compare', methods=['POST'])
 def predict_compare():
     """
-    Endpoint untuk membandingkan hasil prediksi dengan dan tanpa DIoU-NMS.
-    Dioptimasi dengan downscale 480px & imgsz=320 agar 4x-5x lebih cepat.
+    Endpoint perbandingan NMS (Async + Polling):
+    Menerima gambar, langsung mengembalikan job_id (<1 detik),
+    dan menjalankan proses perbandingan di background thread.
+    Client polling ke GET /result/<job_id> sampai status 'done'.
     """
     if model is None:
         return jsonify({'error': 'Model not loaded'}), 500
@@ -435,74 +437,98 @@ def predict_compare():
         return jsonify({'error': 'No image uploaded'}), 400
 
     image_file = request.files['image']
-    
     os.makedirs(TEMP_DIR, exist_ok=True)
-    image_path = os.path.join(TEMP_DIR, f"compare_{uuid.uuid4().hex[:8]}.jpg")
+    job_id = str(uuid.uuid4())
+    image_path = os.path.join(TEMP_DIR, f"compare_{job_id}.jpg")
     image_file.save(image_path)
 
-    # Otomatis downscale gambar ke max 480px agar inferensi cepat di CPU
-    try:
-        img_mat = cv2.imread(image_path)
-        if img_mat is not None:
-            h, w = img_mat.shape[:2]
-            if max(h, w) > 480:
-                scale = 480.0 / max(h, w)
-                new_w, new_h = int(w * scale), int(h * scale)
-                img_mat = cv2.resize(img_mat, (new_w, new_h), interpolation=cv2.INTER_AREA)
-                cv2.imwrite(image_path, img_mat)
-    except Exception as img_err:
-        print(f"[COMPARE RESIZE WARNING] {img_err}")
+    with _jobs_lock:
+        _jobs[job_id] = {
+            'status': 'processing',
+            'result': None,
+            'created_at': time.time()
+        }
 
-    try:
-        with torch.no_grad():
-            # 1. Prediksi dengan DIoU-NMS
-            detections_diou = process_image(image_path)
-            
-            # 2. Prediksi dengan NMS default (kunci imgsz=320 dan max_det=20)
-            default_results = model.predict(image_path, nms=True, conf=0.25, imgsz=320, max_det=20)
-            detections_default = []
-            
-            for r in default_results:
-                boxes = r.boxes
-                if boxes is None:
-                    continue
+    def _run_compare_task(jid, img_path):
+        try:
+            # Otomatis downscale gambar ke max 480px agar inferensi hemat CPU
+            try:
+                img_mat = cv2.imread(img_path)
+                if img_mat is not None:
+                    h, w = img_mat.shape[:2]
+                    if max(h, w) > 480:
+                        scale = 480.0 / max(h, w)
+                        new_w, new_h = int(w * scale), int(h * scale)
+                        img_mat = cv2.resize(img_mat, (new_w, new_h), interpolation=cv2.INTER_AREA)
+                        cv2.imwrite(img_path, img_mat)
+            except Exception as img_err:
+                print(f"[COMPARE RESIZE WARNING] {img_err}")
 
-                for box in boxes:
-                    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                    xmin, ymin, xmax, ymax = int(x1), int(y1), int(x2), int(y2)
-                    conf = float(box.conf[0].cpu().item())
-                    cls = int(box.cls[0].cpu().item())
-                    label = model.names[cls]
+            with torch.no_grad():
+                # 1. Prediksi dengan DIoU-NMS
+                detections_diou = process_image(img_path)
+                
+                # 2. Prediksi dengan NMS default (imgsz=320, max_det=20)
+                default_results = model.predict(img_path, nms=True, conf=0.25, imgsz=320, max_det=20)
+                detections_default = []
+                
+                for r in default_results:
+                    boxes = r.boxes
+                    if boxes is None:
+                        continue
 
-                    detection = {
-                        "ripeness_level": label,
-                        "confidence": conf,
-                        "bounding_box": {
-                            "xmin": xmin,
-                            "ymin": ymin,
-                            "xmax": xmax,
-                            "ymax": ymax
+                    for box in boxes:
+                        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                        xmin, ymin, xmax, ymax = int(x1), int(y1), int(x2), int(y2)
+                        conf = float(box.conf[0].cpu().item())
+                        cls = int(box.cls[0].cpu().item())
+                        label = model.names[cls]
+
+                        detection = {
+                            "ripeness_level": label,
+                            "confidence": conf,
+                            "bounding_box": {
+                                "xmin": xmin,
+                                "ymin": ymin,
+                                "xmax": xmax,
+                                "ymax": ymax
+                            }
                         }
+                        detection["grade"] = assign_grade(detection)
+                        detections_default.append(detection)
+
+            cleanup_file(img_path)
+
+            with _jobs_lock:
+                _jobs[jid]['status'] = 'done'
+                _jobs[jid]['result'] = {
+                    "success": True,
+                    "diou_nms": {
+                        "detections": detections_diou,
+                        "total_mangoes": len(detections_diou)
+                    },
+                    "default_nms": {
+                        "detections": detections_default,
+                        "total_mangoes": len(detections_default)
                     }
-                    detection["grade"] = assign_grade(detection)
-                    detections_default.append(detection)
-        
-        cleanup_file(image_path)
-        
-        return jsonify({
-            "success": True,
-            "diou_nms": {
-                "detections": detections_diou,
-                "total_mangoes": len(detections_diou)
-            },
-            "default_nms": {
-                "detections": detections_default,
-                "total_mangoes": len(detections_default)
-            }
-        })
-    except Exception as e:
-        cleanup_file(image_path)
-        return jsonify({'error': f'Comparison failed: {str(e)}'}), 500
+                }
+        except Exception as e:
+            cleanup_file(img_path)
+            print(f"[COMPARE TASK ERROR] {e}")
+            with _jobs_lock:
+                _jobs[jid]['status'] = 'error'
+                _jobs[jid]['result'] = {'error': f'Comparison failed: {str(e)}'}
+        finally:
+            _cleanup_old_jobs()
+
+    t = threading.Thread(target=_run_compare_task, args=(job_id, image_path), daemon=True)
+    t.start()
+
+    return jsonify({
+        'job_id': job_id,
+        'status': 'processing',
+        'message': 'Gambar perbandingan diterima. Polling /result/<job_id>.'
+    }), 202
 
 @app.route('/predict-live', methods=['POST'])
 def predict_live():

@@ -59,7 +59,7 @@ class _LiveCameraPageState extends State<LiveCameraPage> {
 
     _cameraController = CameraController(
       backCamera,
-      ResolutionPreset.low, // Resolusi rendah agar preview super ringan & hemat kuota
+      ResolutionPreset.low,
       enableAudio: false,
       imageFormatGroup: ImageFormatGroup.yuv420,
     );
@@ -69,10 +69,11 @@ class _LiveCameraPageState extends State<LiveCameraPage> {
 
     await _cameraController!.lockCaptureOrientation(DeviceOrientation.portraitUp);
 
-    // Throttle deteksi ke 2 detik sekali agar HP tetap 60fps & server tidak terbebani
+    // Stream frame kamera dengan throttle
     _cameraController!.startImageStream((CameraImage image) {
       final now = DateTime.now().millisecondsSinceEpoch;
-      if (!_isProcessing && (now - _lastCheckTimestamp >= 2000)) {
+      // Auto-scan tiap 10 detik agar tidak membebani CPU server gratis
+      if (!_isProcessing && (now - _lastCheckTimestamp >= 10000)) {
         _lastCheckTimestamp = now;
         _isProcessing = true;
         _processCameraImage(image);
@@ -84,14 +85,13 @@ class _LiveCameraPageState extends State<LiveCameraPage> {
 
   Future<void> _processCameraImage(CameraImage image) async {
     try {
-      // Konversi YUV ke JPEG dengan downsample cepat
       Uint8List? jpegBytes = await _convertYUV420toJPEG(image);
       if (jpegBytes == null) {
         if (mounted) setState(() => _isProcessing = false);
         return;
       }
 
-      // Rotasi 90 derajat jika mode portrait
+      // Rotasi sesuai orientasi portrait
       if (_currentOrientation == DeviceOrientation.portraitUp) {
         final originalImage = img.decodeJpg(jpegBytes);
         if (originalImage != null) {
@@ -105,7 +105,6 @@ class _LiveCameraPageState extends State<LiveCameraPage> {
         _lastImage = uiImg;
       }
 
-      // Kirim ke endpoint khusus /predict-live (tanpa simpan DB, cepat <300ms)
       var request = http.MultipartRequest(
         'POST',
         Uri.parse(ApiConfig.predictLiveUrl),
@@ -117,7 +116,8 @@ class _LiveCameraPageState extends State<LiveCameraPage> {
         contentType: MediaType('image', 'jpeg'),
       ));
 
-      final streamedRes = await request.send().timeout(const Duration(seconds: 4));
+      // Timeout 45 detik sesuai waktu proses cloud Render
+      final streamedRes = await request.send().timeout(const Duration(seconds: 45));
       final res = await http.Response.fromStream(streamedRes);
 
       if (res.statusCode == 200) {
@@ -147,7 +147,6 @@ class _LiveCameraPageState extends State<LiveCameraPage> {
       final int uvRowStride = image.planes[1].bytesPerRow;
       final int uvPixelStride = image.planes[1].bytesPerPixel ?? 1;
 
-      // Downsample 2x agar loop piksel 4x lebih cepat
       final int step = (width > 320) ? 2 : 1;
       final int outWidth = width ~/ step;
       final int outHeight = height ~/ step;
@@ -185,7 +184,7 @@ class _LiveCameraPageState extends State<LiveCameraPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          'Deteksi Real-time',
+          'Deteksi Kamera',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         foregroundColor: Colors.white,
@@ -222,20 +221,27 @@ class _LiveCameraPageState extends State<LiveCameraPage> {
                 Center(
                   child: AspectRatio(
                     aspectRatio: _cameraController!.value.aspectRatio,
-                    child: CameraPreview(_cameraController!),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        CameraPreview(_cameraController!),
+                        // Render bounding box transparan langsung di atas preview kamera!
+                        if (_detections != null && _lastImage != null)
+                          CustomPaint(
+                            painter: BoxOverlayPainter(
+                              _lastImage!,
+                              _detections!,
+                              drawBackground: false,
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 )
               else
                 const Center(child: CircularProgressIndicator()),
 
-              if (_detections != null && _lastImage != null)
-                CustomPaint(
-                  painter: BoxOverlayPainter(
-                    _lastImage!,
-                    _detections!,
-                  ),
-                ),
-
+              // Status Bar di Bawah Layar
               Positioned(
                 bottom: 24,
                 left: 20,
@@ -244,7 +250,7 @@ class _LiveCameraPageState extends State<LiveCameraPage> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.65),
+                      color: Colors.black.withOpacity(0.70),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
@@ -264,10 +270,10 @@ class _LiveCameraPageState extends State<LiveCameraPage> {
                         const SizedBox(width: 8),
                         Text(
                           _isProcessing
-                              ? "Menganalisis frame..."
+                              ? "Memproses deteksi di cloud (~30s)..."
                               : (_detections != null && _detections!.isNotEmpty)
                                   ? "${_detections!.length} Mangga terdeteksi"
-                                  : "Mengarahkan kamera...",
+                                  : "Mengarahkan kamera ke mangga...",
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 13,

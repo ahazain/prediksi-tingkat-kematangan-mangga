@@ -4,8 +4,9 @@ import 'package:flutter/material.dart';
 class BoxOverlayPainter extends CustomPainter {
   final ui.Image image;
   final List<dynamic> detections;
+  final bool drawBackground;
 
-  BoxOverlayPainter(this.image, this.detections);
+  BoxOverlayPainter(this.image, this.detections, {this.drawBackground = true});
 
   final Map<String, Color> ripenessColors = {
     'sangat matang': Color(0xFFD2691E), // orange-cokelat
@@ -20,9 +21,11 @@ class BoxOverlayPainter extends CustomPainter {
     final scaleX = size.width / image.width;
     final scaleY = size.height / image.height;
 
-    final imageRect = Rect.fromLTWH(0, 0, size.width, size.height);
-    final srcRect = Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble());
-    canvas.drawImageRect(image, srcRect, imageRect, Paint());
+    if (drawBackground) {
+      final imageRect = Rect.fromLTWH(0, 0, size.width, size.height);
+      final srcRect = Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble());
+      canvas.drawImageRect(image, srcRect, imageRect, Paint());
+    }
 
     for (int i = 0; i < detections.length; i++) {
       final item = detections[i];

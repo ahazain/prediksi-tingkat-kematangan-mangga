@@ -74,20 +74,66 @@ class _ComparePageState extends State<ComparePage> {
         ),
       );
 
-      final streamedRes = await request.send().timeout(const Duration(seconds: 45));
+      // STEP 1: Upload gambar untuk compare (server langsung kirim job_id <1 detik)
+      final streamedRes = await request.send().timeout(const Duration(seconds: 30));
       final res = await http.Response.fromStream(streamedRes);
 
-      if (res.statusCode == 200) {
-        final parsed = jsonDecode(res.body);
+      if (res.statusCode != 202 && res.statusCode != 200) {
+        throw Exception("Gagal upload gambar compare, kode: ${res.statusCode}");
+      }
+
+      final uploadJson = jsonDecode(res.body);
+
+      // Jika langsung dapat hasil (sinkron)
+      if (res.statusCode == 200 && uploadJson.containsKey('diou_nms')) {
         if (mounted) {
           setState(() {
-            compareResult = parsed;
+            compareResult = uploadJson;
             _isLoading = false;
           });
         }
-      } else {
-        throw Exception("Server merespons kode: ${res.statusCode}");
+        return;
       }
+
+      final jobId = uploadJson['job_id'] as String?;
+      if (jobId == null) throw Exception("Server tidak mengirimkan job_id");
+
+      // STEP 2: Polling /result/<job_id> setiap 3 detik (max 3 menit)
+      const maxWait = Duration(minutes: 3);
+      const pollInterval = Duration(seconds: 3);
+      final deadline = DateTime.now().add(maxWait);
+
+      while (DateTime.now().isBefore(deadline)) {
+        await Future.delayed(pollInterval);
+        if (!mounted) return;
+
+        final pollRes = await http
+            .get(Uri.parse('${ApiConfig.baseUrl}/result/$jobId'))
+            .timeout(const Duration(seconds: 10));
+
+        if (pollRes.statusCode == 202) {
+          // Masih memproses di cloud
+          continue;
+        }
+
+        final contentType = pollRes.headers['content-type'] ?? '';
+        if (pollRes.statusCode == 200 && contentType.contains('application/json')) {
+          final parsed = jsonDecode(pollRes.body);
+          if (parsed is Map<String, dynamic> && parsed.containsKey('diou_nms')) {
+            if (mounted) {
+              setState(() {
+                compareResult = parsed;
+                _isLoading = false;
+              });
+            }
+            return;
+          }
+        } else {
+          throw Exception("Server error (${pollRes.statusCode}): ${pollRes.body}");
+        }
+      }
+
+      throw Exception("Waktu tunggu perbandingan habis (3 menit). Silakan coba lagi.");
     } catch (e) {
       debugPrint("Compare error: $e");
       if (mounted) {
@@ -216,7 +262,7 @@ class _ComparePageState extends State<ComparePage> {
                     ),
                     SizedBox(height: 8),
                     Text(
-                      "Menjalankan perbandingan NMS Default vs DIoU-NMS di cloud. Harap tunggu ~5-8 detik.",
+                      "Menjalankan perbandingan NMS Default vs DIoU-NMS di cloud (membutuhkan ~30-45 detik). Harap tunggu...",
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 12, color: Colors.grey),
                     ),
