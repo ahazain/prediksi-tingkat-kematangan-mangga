@@ -259,30 +259,33 @@ class _ImageInputPageState extends State<ImageInputPage> {
 
       while (DateTime.now().isBefore(deadline)) {
         await Future.delayed(pollInterval);
-
         if (!mounted) return;
 
-        final pollRes = await http
-            .get(Uri.parse('${ApiConfig.baseUrl}/result/$jobId'))
-            .timeout(const Duration(seconds: 10));
+        try {
+          final pollRes = await http
+              .get(Uri.parse('${ApiConfig.baseUrl}/result/$jobId'))
+              .timeout(const Duration(seconds: 15));
 
-        if (pollRes.statusCode == 202) {
-          // Masih processing — lanjut polling
-          continue;
-        }
-
-        final contentType = pollRes.headers['content-type'] ?? '';
-        if (pollRes.statusCode == 200 &&
-            contentType.contains('application/json')) {
-          final parsed = jsonDecode(pollRes.body);
-          if (parsed is Map<String, dynamic>) {
-            if (mounted) setState(() => _predictionJson = parsed);
-            return; // Selesai!
+          if (pollRes.statusCode == 202) {
+            // Masih processing — lanjut polling
+            continue;
           }
-        } else {
-          // Error dari server
-          final errBody = pollRes.body;
-          throw Exception('Server error (${pollRes.statusCode}): $errBody');
+
+          final contentType = pollRes.headers['content-type'] ?? '';
+          if (pollRes.statusCode == 200 &&
+              contentType.contains('application/json')) {
+            final parsed = jsonDecode(pollRes.body);
+            if (parsed is Map<String, dynamic>) {
+              if (mounted) setState(() => _predictionJson = parsed);
+              return; // Selesai!
+            }
+          } else if (pollRes.statusCode >= 500) {
+            final errBody = pollRes.body;
+            throw Exception('Server error (${pollRes.statusCode}): $errBody');
+          }
+        } catch (pollErr) {
+          debugPrint("Polling retry (server sibuk): $pollErr");
+          continue;
         }
       }
 

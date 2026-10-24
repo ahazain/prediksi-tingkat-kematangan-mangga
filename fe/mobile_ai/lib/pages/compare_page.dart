@@ -107,29 +107,36 @@ class _ComparePageState extends State<ComparePage> {
         await Future.delayed(pollInterval);
         if (!mounted) return;
 
-        final pollRes = await http
-            .get(Uri.parse('${ApiConfig.baseUrl}/result/$jobId'))
-            .timeout(const Duration(seconds: 10));
+        try {
+          final pollRes = await http
+              .get(Uri.parse('${ApiConfig.baseUrl}/result/$jobId'))
+              .timeout(const Duration(seconds: 15));
 
-        if (pollRes.statusCode == 202) {
-          // Masih memproses di cloud
-          continue;
-        }
-
-        final contentType = pollRes.headers['content-type'] ?? '';
-        if (pollRes.statusCode == 200 && contentType.contains('application/json')) {
-          final parsed = jsonDecode(pollRes.body);
-          if (parsed is Map<String, dynamic> && parsed.containsKey('diou_nms')) {
-            if (mounted) {
-              setState(() {
-                compareResult = parsed;
-                _isLoading = false;
-              });
-            }
-            return;
+          if (pollRes.statusCode == 202) {
+            // Masih memproses di cloud — lanjut polling
+            continue;
           }
-        } else {
-          throw Exception("Server error (${pollRes.statusCode}): ${pollRes.body}");
+
+          final contentType = pollRes.headers['content-type'] ?? '';
+          if (pollRes.statusCode == 200 && contentType.contains('application/json')) {
+            final parsed = jsonDecode(pollRes.body);
+            if (parsed is Map<String, dynamic> && parsed.containsKey('diou_nms')) {
+              if (mounted) {
+                setState(() {
+                  compareResult = parsed;
+                  _isLoading = false;
+                });
+              }
+              return;
+            }
+          } else if (pollRes.statusCode >= 500) {
+            throw Exception("Server error (${pollRes.statusCode}): ${pollRes.body}");
+          }
+        } catch (pollErr) {
+          // Jangan batalkan proses jika hanya 1 request polling yang lambat / timeout!
+          // Server sedang sibuk menghitung YOLO di CPU, kita tetap lanjut polling sampai selesai.
+          debugPrint("Polling retry (server sibuk): $pollErr");
+          continue;
         }
       }
 
