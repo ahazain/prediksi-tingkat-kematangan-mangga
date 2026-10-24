@@ -20,6 +20,22 @@ import numpy as np
 import threading
 import time
 import cv2
+import uuid
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Job store in-memory untuk async processing
+# Format: { job_id: { 'status': 'processing'|'done'|'error', 'result': {...}, 'created_at': float } }
+# ─────────────────────────────────────────────────────────────────────────────
+_jobs: dict = {}
+_jobs_lock = threading.Lock()
+
+def _cleanup_old_jobs():
+    """Hapus job yang sudah lebih dari 10 menit agar RAM tidak penuh."""
+    now = time.time()
+    with _jobs_lock:
+        expired = [jid for jid, j in _jobs.items() if now - j['created_at'] > 600]
+        for jid in expired:
+            del _jobs[jid]
 
 app = Flask(__name__)
 CORS(app)
@@ -282,6 +298,9 @@ def root():
 
 @app.route('/predict', methods=['POST'])
 def predict():
+    """Terima gambar, buat job async, langsung kembalikan job_id (< 1 detik).
+    Client harus polling GET /result/<job_id> sampai status == 'done'.
+    """
     if model is None:
         return jsonify({'error': 'Model not loaded'}), 500
 
@@ -289,63 +308,119 @@ def predict():
         return jsonify({'error': 'No image uploaded'}), 400
 
     image_file = request.files['image']
-    
     os.makedirs(TEMP_DIR, exist_ok=True)
-    image_path = os.path.join(TEMP_DIR, image_file.filename)
+
+    # Simpan dengan nama unik agar tidak konflik antar request bersamaan
+    job_id = str(uuid.uuid4())
+    image_path = os.path.join(TEMP_DIR, f"{job_id}.jpg")
     image_file.save(image_path)
 
-    # Otomatis downscale gambar ke max 480px agar proses inferensi instan di CPU
-    try:
-        img_mat = cv2.imread(image_path)
-        if img_mat is not None:
-            h, w = img_mat.shape[:2]
-            if max(h, w) > 480:
-                scale = 480.0 / max(h, w)
-                new_w, new_h = int(w * scale), int(h * scale)
-                img_mat = cv2.resize(img_mat, (new_w, new_h), interpolation=cv2.INTER_AREA)
-                cv2.imwrite(image_path, img_mat)
-    except Exception as img_err:
-        print(f"[RESIZE WARNING] {img_err}")
+    # Registrasi job di store
+    with _jobs_lock:
+        _jobs[job_id] = {
+            'status': 'processing',
+            'result': None,
+            'created_at': time.time()
+        }
 
-    try:
-        detections = process_image(image_path)
-        cleanup_file(image_path)
-        
+    # Jalankan inferensi di background thread
+    def _run_inference(jid, img_path):
         try:
-            history = History(
-                detected_at=datetime.utcnow(),
-                total_mangoes=len(detections)
-            )
-            db.session.add(history)
-            db.session.flush()  # supaya dapat history.id sebelum commit
+            # Downscale ke max 480px
+            try:
+                img_mat = cv2.imread(img_path)
+                if img_mat is not None:
+                    h, w = img_mat.shape[:2]
+                    if max(h, w) > 480:
+                        scale = 480.0 / max(h, w)
+                        img_mat = cv2.resize(img_mat, (int(w * scale), int(h * scale)),
+                                             interpolation=cv2.INTER_AREA)
+                        cv2.imwrite(img_path, img_mat)
+            except Exception as img_err:
+                print(f"[RESIZE WARNING] {img_err}")
 
-            for det in detections:
-                box = det["bounding_box"]
-                detection = Detection(
-                    history_id=history.id,
-                    confidence=det["confidence"],
-                    grade=det["grade"],
-                    ripeness_level=det["ripeness_level"],
-                    bbox_xmin=box["xmin"],
-                    bbox_xmax=box["xmax"],
-                    bbox_ymin=box["ymin"],
-                    bbox_ymax=box["ymax"]
-                )
-                db.session.add(detection)
+            detections = process_image(img_path)
+            cleanup_file(img_path)
 
-            db.session.commit()
-        except Exception as db_err:
-            db.session.rollback()
-            print(f"[PREDICT DB WARNING] Gagal menyimpan riwayat ke DB: {db_err}")
+            # Simpan ke DB (non-blocking, error tidak menghambat response)
+            try:
+                with app.app_context():
+                    history = History(
+                        detected_at=datetime.utcnow(),
+                        total_mangoes=len(detections)
+                    )
+                    db.session.add(history)
+                    db.session.flush()
+                    for det in detections:
+                        box = det["bounding_box"]
+                        db.session.add(Detection(
+                            history_id=history.id,
+                            confidence=det["confidence"],
+                            grade=det["grade"],
+                            ripeness_level=det["ripeness_level"],
+                            bbox_xmin=box["xmin"],
+                            bbox_xmax=box["xmax"],
+                            bbox_ymin=box["ymin"],
+                            bbox_ymax=box["ymax"]
+                        ))
+                    db.session.commit()
+            except Exception as db_err:
+                print(f"[PREDICT DB WARNING] {db_err}")
+                try:
+                    db.session.rollback()
+                except Exception:
+                    pass
 
-        return jsonify({
-            "success": True,
-            "detections": detections,
-            "total_mangoes": len(detections)
-        })
-    except Exception as e:
-        cleanup_file(image_path)
-        return jsonify({'error': f'Prediction failed: {str(e)}'}), 500
+            with _jobs_lock:
+                _jobs[jid]['status'] = 'done'
+                _jobs[jid]['result'] = {
+                    'success': True,
+                    'detections': detections,
+                    'total_mangoes': len(detections)
+                }
+        except Exception as e:
+            cleanup_file(img_path)
+            print(f"[INFERENCE ERROR] {e}")
+            with _jobs_lock:
+                _jobs[jid]['status'] = 'error'
+                _jobs[jid]['result'] = {'error': f'Prediction failed: {str(e)}'}
+        finally:
+            _cleanup_old_jobs()
+
+    t = threading.Thread(target=_run_inference, args=(job_id, image_path), daemon=True)
+    t.start()
+
+    # Langsung balas dalam < 1 detik — tidak ada timeout Cloudflare
+    return jsonify({
+        'job_id': job_id,
+        'status': 'processing',
+        'message': 'Gambar diterima, sedang diproses. Polling /result/<job_id> setiap 3 detik.'
+    }), 202
+
+
+@app.route('/result/<job_id>', methods=['GET'])
+def get_result(job_id):
+    """Cek status job. Kembalikan hasil jika sudah selesai."""
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+
+    if job is None:
+        return jsonify({'error': 'Job tidak ditemukan atau sudah kedaluwarsa'}), 404
+
+    if job['status'] == 'processing':
+        return jsonify({'job_id': job_id, 'status': 'processing'}), 202
+
+    if job['status'] == 'error':
+        # Hapus job setelah dibaca
+        with _jobs_lock:
+            _jobs.pop(job_id, None)
+        return jsonify(job['result']), 500
+
+    # status == 'done'
+    result = job['result']
+    with _jobs_lock:
+        _jobs.pop(job_id, None)  # Bersihkan setelah dibaca
+    return jsonify(result), 200
 
 @app.route('/predict-compare', methods=['POST'])
 def predict_compare():

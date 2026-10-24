@@ -214,11 +214,10 @@ class _ImageInputPageState extends State<ImageInputPage> {
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
     try {
+      // ── STEP 1: Upload gambar → server langsung balas job_id (<1 detik) ──
       var request = http.MultipartRequest(
         'POST',
         Uri.parse(ApiConfig.predictUrl),
@@ -239,39 +238,69 @@ class _ImageInputPageState extends State<ImageInputPage> {
         ));
       }
 
-      final streamedResponse = await request.send().timeout(const Duration(seconds: 120));
-      final response = await http.Response.fromStream(streamedResponse);
-      final responseString = response.body;
-      final contentType = response.headers['content-type'] ?? '';
+      // Upload timeout 30 detik (cukup karena gambar sudah dikompres ~30KB)
+      final streamedResponse =
+          await request.send().timeout(const Duration(seconds: 30));
+      final uploadResponse = await http.Response.fromStream(streamedResponse);
 
-      if (response.statusCode == 200 && contentType.contains('application/json')) {
-        final parsed = jsonDecode(responseString);
-        if (parsed is Map<String, dynamic>) {
-          setState(() {
-            _predictionJson = parsed;
-          });
-        } else {
-          throw Exception('Format JSON tidak sesuai');
-        }
-      } else {
-        throw Exception('Server merespons kode: ${response.statusCode}');
+      if (uploadResponse.statusCode != 202) {
+        throw Exception(
+            'Upload gagal, kode: ${uploadResponse.statusCode}\n${uploadResponse.body}');
       }
+
+      final uploadJson = jsonDecode(uploadResponse.body) as Map<String, dynamic>;
+      final jobId = uploadJson['job_id'] as String?;
+      if (jobId == null) throw Exception('Server tidak mengirim job_id');
+
+      // ── STEP 2: Polling /result/<job_id> setiap 3 detik, max 3 menit ──
+      const maxWait = Duration(minutes: 3);
+      const pollInterval = Duration(seconds: 3);
+      final deadline = DateTime.now().add(maxWait);
+
+      while (DateTime.now().isBefore(deadline)) {
+        await Future.delayed(pollInterval);
+
+        if (!mounted) return;
+
+        final pollRes = await http
+            .get(Uri.parse('${ApiConfig.baseUrl}/result/$jobId'))
+            .timeout(const Duration(seconds: 10));
+
+        if (pollRes.statusCode == 202) {
+          // Masih processing — lanjut polling
+          continue;
+        }
+
+        final contentType = pollRes.headers['content-type'] ?? '';
+        if (pollRes.statusCode == 200 &&
+            contentType.contains('application/json')) {
+          final parsed = jsonDecode(pollRes.body);
+          if (parsed is Map<String, dynamic>) {
+            if (mounted) setState(() => _predictionJson = parsed);
+            return; // Selesai!
+          }
+        } else {
+          // Error dari server
+          final errBody = pollRes.body;
+          throw Exception('Server error (${pollRes.statusCode}): $errBody');
+        }
+      }
+
+      // Timeout polling
+      throw Exception(
+          'Waktu tunggu habis (3 menit). Coba lagi saat server tidak sibuk.');
     } catch (e) {
       debugPrint("Error saat kirim gambar: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text("Gagal menganalisis gambar: $e"),
-            duration: const Duration(seconds: 5),
+            content: Text("Gagal menganalisis: $e"),
+            duration: const Duration(seconds: 6),
           ),
         );
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
