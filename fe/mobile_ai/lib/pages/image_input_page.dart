@@ -179,20 +179,34 @@ class _ImageInputPageState extends State<ImageInputPage> {
       );
 
       if (pickedFile != null) {
-        if (kIsWeb) {
-          final bytes = await pickedFile.readAsBytes();
-          setState(() {
-            _imageBytes = bytes;
-            _imageFile = null;
-            _predictionJson = null;
-          });
-        } else {
-          setState(() {
-            _imageFile = File(pickedFile.path);
-            _imageBytes = null;
-            _predictionJson = null;
-          });
+        // Baca bytes asli dari galeri/kamera
+        final rawBytes = await pickedFile.readAsBytes();
+
+        // Jamin kompresi software ke max 512px (mengatasi bug Android Gallery Picker yang sering mengirim file asli 10MB+)
+        Uint8List compressedBytes = rawBytes;
+        try {
+          final decoded = img.decodeImage(rawBytes);
+          if (decoded != null) {
+            if (decoded.width > 512 || decoded.height > 512) {
+              final resized = img.copyResize(
+                decoded,
+                width: decoded.width >= decoded.height ? 512 : null,
+                height: decoded.height > decoded.width ? 512 : null,
+              );
+              compressedBytes = Uint8List.fromList(img.encodeJpg(resized, quality: 70));
+            } else {
+              compressedBytes = Uint8List.fromList(img.encodeJpg(decoded, quality: 70));
+            }
+          }
+        } catch (compressErr) {
+          debugPrint("[COMPRESS LOCAL ERROR] $compressErr");
         }
+
+        setState(() {
+          _imageBytes = compressedBytes;
+          _imageFile = null;
+          _predictionJson = null;
+        });
 
         await _processImage();
       }
@@ -205,7 +219,7 @@ class _ImageInputPageState extends State<ImageInputPage> {
   }
 
   Future<void> _processImage() async {
-    final hasImage = kIsWeb ? _imageBytes != null : _imageFile != null;
+    final hasImage = _imageBytes != null || _imageFile != null;
 
     if (!hasImage) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -223,7 +237,8 @@ class _ImageInputPageState extends State<ImageInputPage> {
         Uri.parse(ApiConfig.predictUrl),
       );
 
-      if (kIsWeb) {
+      // Selalu kirim bytes terkompresi (~30KB) agar upload instan <1 detik
+      if (_imageBytes != null) {
         request.files.add(http.MultipartFile.fromBytes(
           'image',
           _imageBytes!,
@@ -238,9 +253,9 @@ class _ImageInputPageState extends State<ImageInputPage> {
         ));
       }
 
-      // Upload timeout 30 detik (cukup karena gambar sudah dikompres ~30KB)
+      // Upload timeout 60 detik (sangat cukup untuk file 30KB)
       final streamedResponse =
-          await request.send().timeout(const Duration(seconds: 30));
+          await request.send().timeout(const Duration(seconds: 60));
       final uploadResponse = await http.Response.fromStream(streamedResponse);
 
       if (uploadResponse.statusCode != 202) {
