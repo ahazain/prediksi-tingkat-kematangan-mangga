@@ -13,6 +13,9 @@ from ultralytics import YOLO
 from sqlalchemy import func, extract
 from collections import defaultdict
 import torch
+# Kunci PyTorch ke 1 thread agar tidak terjadi CPU-throttling di CPU Render (0.1 core)
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
 import numpy as np
 import threading
 import time
@@ -100,8 +103,10 @@ def diou_nms(boxes, scores, classes, iou_threshold=0.5):
         if len(cls_boxes) == 0:
             continue
             
-        # Sort by confidence
+        # Sort by confidence dan batasi ke 30 kandidat teratas agar while loop tidak lambat di CPU
         _, order = cls_scores.sort(0, descending=True)
+        if len(order) > 30:
+            order = order[:30]
         
         keep_cls = []
         while len(order) > 0:
@@ -196,8 +201,8 @@ def process_image(image_path):
     Args:
         image_path: path to image
     """
-    # Get raw predictions without NMS
-    results = model.predict(image_path, nms=False, conf=0.25)
+    # Get raw predictions without NMS (imgsz=416 hemat komputasi 50% dibanding default 640)
+    results = model.predict(image_path, nms=False, conf=0.25, imgsz=416)
     
     filtered_results = []
     
@@ -292,28 +297,33 @@ def predict():
         detections = process_image(image_path)
         cleanup_file(image_path)
         
-        history = History(
-            detected_at=datetime.utcnow(),
-            total_mangoes=len(detections)
-        )
-        db.session.add(history)
-        db.session.flush()  # supaya dapat history.id sebelum commit
-
-        for det in detections:
-            box = det["bounding_box"]
-            detection = Detection(
-                history_id=history.id,
-                confidence=det["confidence"],
-                grade=det["grade"],
-                ripeness_level=det["ripeness_level"],
-                bbox_xmin=box["xmin"],
-                bbox_xmax=box["xmax"],
-                bbox_ymin=box["ymin"],
-                bbox_ymax=box["ymax"]
+        try:
+            history = History(
+                detected_at=datetime.utcnow(),
+                total_mangoes=len(detections)
             )
-            db.session.add(detection)
+            db.session.add(history)
+            db.session.flush()  # supaya dapat history.id sebelum commit
 
-        db.session.commit()
+            for det in detections:
+                box = det["bounding_box"]
+                detection = Detection(
+                    history_id=history.id,
+                    confidence=det["confidence"],
+                    grade=det["grade"],
+                    ripeness_level=det["ripeness_level"],
+                    bbox_xmin=box["xmin"],
+                    bbox_xmax=box["xmax"],
+                    bbox_ymin=box["ymin"],
+                    bbox_ymax=box["ymax"]
+                )
+                db.session.add(detection)
+
+            db.session.commit()
+        except Exception as db_err:
+            db.session.rollback()
+            print(f"[PREDICT DB WARNING] Gagal menyimpan riwayat ke DB: {db_err}")
+
         return jsonify({
             "success": True,
             "detections": detections,

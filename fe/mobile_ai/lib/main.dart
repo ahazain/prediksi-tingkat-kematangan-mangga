@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'pages/splash_screen.dart'; // Import splash screen
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const MyApp());
 }
 

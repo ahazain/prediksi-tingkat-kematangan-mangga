@@ -1,9 +1,9 @@
 class ApiConfig {
-  // Default ke IP Wi-Fi laptop lokal saat ini
-  static String baseUrl = 'http://192.168.110.60:5000';
+  // Default ke Render Cloud (Aktif & Siap untuk APK di semua device)
+  static String baseUrl = 'https://deteksi-mangga-api.onrender.com';
 
-  // Opsi Render Cloud (jika diaktifkan):
-  // static String baseUrl = 'https://deteksi-mangga-api.onrender.com';
+  // Opsi Pengujian Lokal (Localhost / Wi-Fi laptop):
+  // static String baseUrl = 'http://192.168.110.60:5000';
 
   static String get predictUrl => '$baseUrl/predict';
   static String get predictCompareUrl => '$baseUrl/predict-compare';

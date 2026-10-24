@@ -34,6 +34,7 @@ class _ImageInputPageState extends State<ImageInputPage> {
   Uint8List? _imageBytes;
   Map<String, dynamic>? _predictionJson;
   late ValueNotifier<bool> _dialNotifier;
+  bool _isLoading = false;
 
   @override
   void initState() {
@@ -69,7 +70,7 @@ class _ImageInputPageState extends State<ImageInputPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Text(
-                "Masukkan URL/IP Backend Flask (contoh: http://192.168.110.60:5000):",
+                "Masukkan URL Backend (contoh: https://deteksi-mangga-api.onrender.com):",
                 style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
               const SizedBox(height: 12),
@@ -172,6 +173,9 @@ class _ImageInputPageState extends State<ImageInputPage> {
       final XFile? pickedFile = await _picker.pickImage(
         source: source,
         preferredCameraDevice: CameraDevice.rear,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 85,
       );
 
       if (pickedFile != null) {
@@ -210,6 +214,10 @@ class _ImageInputPageState extends State<ImageInputPage> {
       return;
     }
 
+    setState(() {
+      _isLoading = true;
+    });
+
     try {
       var request = http.MultipartRequest(
         'POST',
@@ -231,9 +239,9 @@ class _ImageInputPageState extends State<ImageInputPage> {
         ));
       }
 
-      final response = await request.send();
-      final bytes = await response.stream.toBytes();
-      final responseString = utf8.decode(bytes);
+      final streamedResponse = await request.send().timeout(const Duration(seconds: 90));
+      final response = await http.Response.fromStream(streamedResponse);
+      final responseString = response.body;
       final contentType = response.headers['content-type'] ?? '';
 
       if (response.statusCode == 200 && contentType.contains('application/json')) {
@@ -246,21 +254,24 @@ class _ImageInputPageState extends State<ImageInputPage> {
           throw Exception('Format JSON tidak sesuai');
         }
       } else {
-        throw Exception('Response bukan JSON: ${response.statusCode}');
+        throw Exception('Server merespons kode: ${response.statusCode}');
       }
     } catch (e) {
       debugPrint("Error saat kirim gambar: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Gagal terhubung ke ${ApiConfig.baseUrl}: $e"),
-          duration: const Duration(seconds: 5),
-          action: SnackBarAction(
-            label: "Ganti IP",
-            textColor: Colors.yellow,
-            onPressed: _showServerDialog,
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Gagal menganalisis gambar: $e"),
+            duration: const Duration(seconds: 5),
           ),
-        ),
-      );
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -349,13 +360,6 @@ class _ImageInputPageState extends State<ImageInputPage> {
             ),
             centerTitle: true,
             iconTheme: const IconThemeData(color: Colors.white),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.settings_ethernet_rounded),
-                tooltip: "Pengaturan Server",
-                onPressed: _showServerDialog,
-              ),
-            ],
           ),
         ),
       ),
@@ -364,7 +368,52 @@ class _ImageInputPageState extends State<ImageInputPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (_imageBytes == null && _imageFile == null)
+            if (_isLoading)
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 40),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.08),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 48,
+                      height: 48,
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF2979FF),
+                        strokeWidth: 4,
+                      ),
+                    ),
+                    SizedBox(height: 24),
+                    Text(
+                      "Menganalisis Kematangan...",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1E293B),
+                        fontFamily: 'Chillax',
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      "Model AI YOLOv8 di server cloud sedang memproses deteksi dan grading kematangan (memerlukan waktu ~45-60 detik). Harap tunggu...",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 13, color: Colors.grey, height: 1.4),
+                    ),
+                  ],
+                ),
+              )
+            else if (_imageBytes == null && _imageFile == null)
               Container(
                 margin: const EdgeInsets.symmetric(vertical: 100),
                 height: 250,
@@ -385,10 +434,10 @@ class _ImageInputPageState extends State<ImageInputPage> {
                   ],
                 ),
                 padding: const EdgeInsets.all(20),
-                child: Center(
+                child: const Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
-                    children: const [
+                    children: [
                       Icon(Icons.image_search_rounded, size: 100, color: Colors.white),
                       SizedBox(height: 12),
                       Text(

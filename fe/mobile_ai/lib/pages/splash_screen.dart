@@ -17,10 +17,12 @@ class _SplashScreenState extends State<SplashScreen> {
 
     // Fade out setelah 2 detik
     Future.delayed(const Duration(seconds: 2), () {
+      if (!mounted) return;
       setState(() => _opacity = 0.0);
 
       // Navigasi ke halaman utama setelah efek memudar selesai
       Future.delayed(const Duration(milliseconds: 800), () {
+        if (!mounted) return;
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const ImageInputPage()),
